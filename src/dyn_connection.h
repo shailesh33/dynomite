@@ -20,10 +20,10 @@
  * limitations under the License.
  */
 
-#include "dyn_core.h"
 
 #ifndef _DYN_CONNECTION_H_
 #define _DYN_CONNECTION_H_
+#include "dyn_core.h"
 
 #define MAX_CONN_QUEUE_SIZE           20000
 #define MAX_CONN_ALLOWABLE_NON_RECV   5
@@ -111,6 +111,7 @@ struct conn {
     uint32_t           attempted_reconnect;   /* #attempted reconnect before calling close */
     uint32_t           non_bytes_recv;        /* #times or epoll triggers we receive no bytes */
     //uint32_t           non_bytes_send;        /* #times or epoll triggers that we are not able to send any bytes */
+    consistency_t      consistency;
 };
 
 TAILQ_HEAD(conn_tqh, conn);

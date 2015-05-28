@@ -301,7 +301,6 @@ struct server_pool {
 
 };
 
-
 struct context *core_start(struct instance *nci);
 void core_stop(struct context *ctx);
 rstatus_t core_core(void *arg, uint32_t events);

@@ -92,7 +92,7 @@ vnode_update(struct server_pool *sp)
         if (new_cnt > 1) {
            struct continuum *continuum = dn_realloc(rack->continuum, sizeof(struct continuum) * new_cnt);
            if (continuum == NULL) {
-        	  log_debug(LOG_ERR, "Are we failing? Why???? This is a serious issue");
+              log_debug(LOG_ERR, "Are we failing? Why???? This is a serious issue");
               return DN_ENOMEM;
            }
 

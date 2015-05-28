@@ -272,7 +272,6 @@ rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg,
     if (rsp_filter(ctx, conn, msg)) {
         return;
     }
-
     rsp_forward(ctx, conn, msg);
 }
 
@@ -282,7 +281,8 @@ rsp_send_next(struct context *ctx, struct conn *conn)
     rstatus_t status;
     struct msg *msg, *pmsg; /* response and it's peer request */
 
-    ASSERT((conn->client && !conn->proxy) || (conn->dnode_client && !conn->dnode_server));
+    ASSERT((conn->client && !conn->proxy) ||
+           (conn->dnode_client && !conn->dnode_server));
 
     pmsg = TAILQ_FIRST(&conn->omsg_q);
     if (pmsg == NULL || !req_done(conn, pmsg)) {
@@ -352,6 +352,7 @@ rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
        log_debug(LOG_VVERB, "send done rsp %"PRIu64" on c %d", msg->id, conn->sd);
     }
 
+    log_debug(LOG_NOTICE, "conn %p msg %p done", conn, msg);
     pmsg = msg->peer;
 
     ASSERT(!msg->request && pmsg->request);

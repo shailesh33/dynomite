@@ -252,6 +252,7 @@ req_server_enqueue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
     }
 
     TAILQ_INSERT_TAIL(&conn->imsg_q, msg, s_tqe);
+    log_debug(LOG_NOTICE, "conn %p enqueue inq %p", conn, msg);
 
     if (!conn->dyn_mode) {
        stats_server_incr(ctx, conn->owner, in_queue);
@@ -270,6 +271,7 @@ req_server_dequeue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
     ASSERT(!conn->client && !conn->proxy);
 
     TAILQ_REMOVE(&conn->imsg_q, msg, s_tqe);
+    log_debug(LOG_NOTICE, "conn %p dequeue inq %p", conn, msg);
 
     stats_server_decr(ctx, conn->owner, in_queue);
     stats_server_decr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
@@ -283,6 +285,7 @@ req_client_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg->stime_in_microsec = dn_usec_now();
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, c_tqe);
+    log_debug(LOG_NOTICE, "conn %p enqueue outq %p", conn, msg);
 }
 
 void
@@ -292,6 +295,7 @@ req_server_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     ASSERT(!conn->client && !conn->proxy);
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, s_tqe);
+    log_debug(LOG_NOTICE, "conn %p enqueue outq %p", conn, msg);
 
     stats_server_incr(ctx, conn->owner, out_queue);
     stats_server_incr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
@@ -306,6 +310,7 @@ req_client_dequeue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     uint64_t latency = dn_usec_now() - msg->stime_in_microsec;
     stats_histo_add_latency(ctx, latency);
     TAILQ_REMOVE(&conn->omsg_q, msg, c_tqe);
+    log_debug(LOG_NOTICE, "conn %p dequeue outq %p", conn, msg);
 }
 
 void
@@ -317,6 +322,7 @@ req_server_dequeue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg_tmo_delete(msg);
 
     TAILQ_REMOVE(&conn->omsg_q, msg, s_tqe);
+    log_debug(LOG_NOTICE, "conn %p dequeue outq %p", conn, msg);
 
     stats_server_decr(ctx, conn->owner, out_queue);
     stats_server_decr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
@@ -463,7 +469,7 @@ req_forward_stats(struct context *ctx, struct server *server, struct msg *msg)
 
 void
 local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
-		               uint8_t *key, uint32_t keylen)
+                  uint8_t *key, uint32_t keylen)
 {
     rstatus_t status;
     struct conn *s_conn;
@@ -472,7 +478,8 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
        loga("local_req_forward entering ............");
     }
 
-    ASSERT((c_conn->client || c_conn->dnode_client) && !c_conn->proxy && !c_conn->dnode_server);
+    ASSERT((c_conn->client || c_conn->dnode_client) && !c_conn->proxy &&
+           !c_conn->dnode_server);
 
     /* enqueue message (request) into client outq, if response is expected */
     if (!msg->noreply) {
@@ -480,6 +487,7 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
     }
 
     s_conn = server_pool_conn(ctx, c_conn->owner, key, keylen);
+    log_debug(LOG_NOTICE, "c_conn %p got server conn %p", c_conn, s_conn);
     if (s_conn == NULL) {
         req_forward_error(ctx, c_conn, msg);
         return;
@@ -488,7 +496,7 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
 
     if (log_loggable(LOG_DEBUG)) {
        log_debug(LOG_DEBUG, "forwarding request from client conn '%s' to storage conn '%s'",
-  		      	dn_unresolve_peer_desc(c_conn->sd), dn_unresolve_peer_desc(s_conn->sd));
+                    dn_unresolve_peer_desc(c_conn->sd), dn_unresolve_peer_desc(s_conn->sd));
     }
 
     if (ctx->dyn_state == NORMAL) {
@@ -503,28 +511,28 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
             }
         }
     } else if (ctx->dyn_state == STANDBY) {  //no reads/writes from peers/clients
-    	log_debug(LOG_INFO, "Node is in STANDBY state. Drop write/read requests");
-    	req_forward_error(ctx, c_conn, msg);
-    	return;
+        log_debug(LOG_INFO, "Node is in STANDBY state. Drop write/read requests");
+        req_forward_error(ctx, c_conn, msg);
+        return;
     } else if (ctx->dyn_state == WRITES_ONLY && msg->is_read) {
-    	//no reads from peers/clients but allow writes from peers/clients
-    	log_debug(LOG_INFO, "Node is in WRITES_ONLY state. Drop read requests");
-    	req_forward_error(ctx, c_conn, msg);
+        //no reads from peers/clients but allow writes from peers/clients
+        log_debug(LOG_INFO, "Node is in WRITES_ONLY state. Drop read requests");
+        req_forward_error(ctx, c_conn, msg);
         return;
     } else if (ctx->dyn_state == RESUMING) {
-    	log_debug(LOG_INFO, "Node is in RESUMING state. Still drop read requests and flush out all the queued writes");
-    	if (msg->is_read) {
-    		req_forward_error(ctx, c_conn, msg);
-    		return;
-    	}
+        log_debug(LOG_INFO, "Node is in RESUMING state. Still drop read requests and flush out all the queued writes");
+        if (msg->is_read) {
+            req_forward_error(ctx, c_conn, msg);
+            return;
+        }
 
-    	status = event_add_out(ctx->evb, s_conn);
+        status = event_add_out(ctx->evb, s_conn);
 
-    	if (status != DN_OK) {
-    	    req_forward_error(ctx, c_conn, msg);
-    	    s_conn->err = errno;
-    	    return;
-    	}
+        if (status != DN_OK) {
+            req_forward_error(ctx, c_conn, msg);
+            s_conn->err = errno;
+            return;
+        }
     }
 
     s_conn->enqueue_inq(ctx, s_conn, msg);
@@ -547,38 +555,38 @@ request_send_to_all_racks(struct msg *msg) {
 
 static void
 admin_local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
-		struct rack *rack, uint8_t *key, uint32_t keylen)
+                        struct rack *rack, uint8_t *key, uint32_t keylen)
 {
-	struct conn *p_conn;
-	rstatus_t status;
+    struct conn *p_conn;
+    rstatus_t status;
 
-	ASSERT(c_conn->client || c_conn->dnode_client);
+    ASSERT(c_conn->client || c_conn->dnode_client);
 
-	p_conn = dnode_peer_pool_conn(ctx, c_conn->owner, rack, key, keylen, msg->msg_type);
-	if (p_conn == NULL) {
-		c_conn->err = EHOSTDOWN;
-		req_forward_error(ctx, c_conn, msg);
-		return;
-	}
+    p_conn = dnode_peer_pool_conn(ctx, c_conn->owner, rack, key, keylen, msg->msg_type);
+    if (p_conn == NULL) {
+        c_conn->err = EHOSTDOWN;
+        req_forward_error(ctx, c_conn, msg);
+        return;
+    }
 
-	struct server *peer = p_conn->owner;
-	struct msg *nmsg;
+    struct server *peer = p_conn->owner;
+    struct msg *nmsg;
 
-	if (peer->is_local) {
-		//do nothing
-		nmsg = msg_get_rsp_integer(true);
-		c_conn->enqueue_outq(ctx, c_conn, msg);
-		msg->peer = nmsg;
-		nmsg->peer = msg;
+    if (peer->is_local) {
+        //do nothing
+        nmsg = msg_get_rsp_integer(true);
+        c_conn->enqueue_outq(ctx, c_conn, msg);
+        msg->peer = nmsg;
+        nmsg->peer = msg;
 
-		msg->done = 1;
-		//msg->pre_coalesce(msg);
-		status = event_add_out(ctx->evb, c_conn);
+        msg->done = 1;
+        //msg->pre_coalesce(msg);
+        status = event_add_out(ctx->evb, c_conn);
         IGNORE_RET_VAL(status);
-	} else {
-		log_debug(LOG_NOTICE, "Need to delete [%.*s] ", keylen, key);
-		local_req_forward(ctx, c_conn, msg, key, keylen);
-	}
+    } else {
+        log_debug(LOG_NOTICE, "Need to delete [%.*s] ", keylen, key);
+        local_req_forward(ctx, c_conn, msg, key, keylen);
+    }
 }
 
 void
@@ -600,9 +608,11 @@ remote_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
     struct server *peer = p_conn->owner;
 
     if (peer->is_local) {
+        log_debug(LOG_NOTICE, "c_conn: %p forwarding %p is local", c_conn, msg, p_conn);
         local_req_forward(ctx, c_conn, msg, key, keylen);
         return;
     } else {
+        log_debug(LOG_NOTICE, "c_conn: %p forwarding %p to p_conn %p", c_conn, msg, p_conn);
         dnode_peer_req_forward(ctx, c_conn, p_conn, msg, rack, key, keylen);
     }
 }
@@ -611,123 +621,132 @@ remote_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
 static void
 req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
 {
-	struct server_pool *pool = c_conn->owner;
-	uint8_t *key;
-	uint32_t keylen;
+    struct server_pool *pool = c_conn->owner;
+    uint8_t *key;
+    uint32_t keylen;
 
-	ASSERT(c_conn->client && !c_conn->proxy);
+    ASSERT(c_conn->client && !c_conn->proxy);
 
-	if (msg->is_read)
-		stats_pool_incr(ctx, pool, client_read_requests);
-	else
-		stats_pool_incr(ctx, pool, client_write_requests);
+    if (msg->is_read)
+        stats_pool_incr(ctx, pool, client_read_requests);
+    else
+        stats_pool_incr(ctx, pool, client_write_requests);
 
-	key = NULL;
-	keylen = 0;
+    key = NULL;
+    keylen = 0;
 
-	if (!string_empty(&pool->hash_tag)) {
-		struct string *tag = &pool->hash_tag;
-		uint8_t *tag_start, *tag_end;
+    if (!string_empty(&pool->hash_tag)) {
+        struct string *tag = &pool->hash_tag;
+        uint8_t *tag_start, *tag_end;
 
-		tag_start = dn_strchr(msg->key_start, msg->key_end, tag->data[0]);
-		if (tag_start != NULL) {
-			tag_end = dn_strchr(tag_start + 1, msg->key_end, tag->data[1]);
-			if (tag_end != NULL) {
-				key = tag_start + 1;
-				keylen = (uint32_t)(tag_end - key);
-			}
-		}
-	}
+        tag_start = dn_strchr(msg->key_start, msg->key_end, tag->data[0]);
+        if (tag_start != NULL) {
+            tag_end = dn_strchr(tag_start + 1, msg->key_end, tag->data[1]);
+            if (tag_end != NULL) {
+                key = tag_start + 1;
+                keylen = (uint32_t)(tag_end - key);
+            }
+        }
+    }
 
-	if (keylen == 0) {
-		key = msg->key_start;
-		keylen = (uint32_t)(msg->key_end - msg->key_start);
-	}
+    if (keylen == 0) {
+        key = msg->key_start;
+        keylen = (uint32_t)(msg->key_end - msg->key_start);
+    }
 
-	// need to capture the initial mbuf location as once we add in the dynomite headers (as mbufs to the src msg),
-	// that will bork the request sent to secondary racks
-	struct mbuf *orig_mbuf = STAILQ_FIRST(&msg->mhdr);
+    // need to capture the initial mbuf location as once we add in the dynomite
+    // headers (as mbufs to the src msg), that will bork the request sent to
+    // secondary racks
+    struct mbuf *orig_mbuf = STAILQ_FIRST(&msg->mhdr);
 
-	if (ctx->admin_opt == 1) {
-		if (msg->type == MSG_REQ_REDIS_DEL || msg->type == MSG_REQ_MC_DELETE) {
-		  struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
-		  admin_local_req_forward(ctx, c_conn, msg, rack, key, keylen);
-		  return;
-		}
-	}
+    if (ctx->admin_opt == 1) {
+        if (msg->type == MSG_REQ_REDIS_DEL || msg->type == MSG_REQ_MC_DELETE) {
+          struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
+          admin_local_req_forward(ctx, c_conn, msg, rack, key, keylen);
+          return;
+        }
+    }
 
-	if (request_send_to_all_racks(msg)) {
-		uint32_t dc_cnt = array_n(&pool->datacenters);
-		uint32_t dc_index;
-		for(dc_index = 0; dc_index < dc_cnt; dc_index++) {
-			struct datacenter *dc = array_get(&pool->datacenters, dc_index);
-			if (dc == NULL) {
-				log_error("Wow, this is very bad, dc is NULL");
-				return;
-			}
+    if (request_send_to_all_racks(msg)) {
+        uint32_t dc_cnt = array_n(&pool->datacenters);
+        uint32_t dc_index;
+        for(dc_index = 0; dc_index < dc_cnt; dc_index++) {
+            struct datacenter *dc = array_get(&pool->datacenters, dc_index);
+            if (dc == NULL) {
+                log_error("Wow, this is very bad, dc is NULL");
+                return;
+            }
 
-			if (string_compare(dc->name, &pool->dc) == 0) { //send to all local racks
-				//log_debug(LOG_DEBUG, "dc name  '%.*s'", dc->name->len, dc->name->data);
-				uint32_t rack_cnt = array_n(&dc->racks);
-				uint32_t rack_index;
-				for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
-					struct rack *rack = array_get(&dc->racks, rack_index);
-					//log_debug(LOG_DEBUG, "rack name '%.*s'", rack->name->len, rack->name->data);
-					struct msg *rack_msg;
-					if (string_compare(rack->name, &pool->rack) == 0 ) {
-						rack_msg = msg;
-					} else {
-						rack_msg = msg_get(c_conn, msg->request, msg->redis);
-						if (rack_msg == NULL) {
-							log_debug(LOG_VERB, "whelp, looks like yer screwed now, buddy. no inter-rack messages for you!");
-							continue;
-						}
+            if (string_compare(dc->name, &pool->dc) == 0) { //send to all local racks
+                //log_debug(LOG_DEBUG, "dc name  '%.*s'",
+                //            dc->name->len, dc->name->data);
+                uint32_t rack_cnt = array_n(&dc->racks);
+                uint32_t rack_index;
+                log_debug(LOG_NOTICE, "same DC racks:%d expect replies %d",
+                          rack_cnt, rack_cnt/2 + 1);
+                for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
+                    struct rack *rack = array_get(&dc->racks, rack_index);
+                    //log_debug(LOG_DEBUG, "rack name '%.*s'",
+                    //            rack->name->len, rack->name->data);
+                    struct msg *rack_msg;
+                    if (string_compare(rack->name, &pool->rack) == 0 ) {
+                        rack_msg = msg;
+                    } else {
+                        rack_msg = msg_get(c_conn, msg->request, msg->redis);
+                        if (rack_msg == NULL) {
+                            log_debug(LOG_VERB, "whelp, looks like yer screwed "
+                                      "now, buddy. no inter-rack messages for "
+                                      "you!");
+                            continue;
+                        }
 
-						msg_clone(msg, orig_mbuf, rack_msg);
-						rack_msg->swallow = true;
-					}
+                        msg_clone(msg, orig_mbuf, rack_msg);
+                        log_debug(LOG_NOTICE, "msg %p clone to rack msg %p", msg, rack_msg);
+                        rack_msg->swallow = true;
+                    }
 
-					if (log_loggable(LOG_DEBUG)) {
-					   log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
-						   	dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
-					}
-					remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
-				}
-			} else {
-            uint32_t rack_cnt = array_n(&dc->racks);
-				if (rack_cnt == 0)
-					continue;
+                    if (log_loggable(LOG_DEBUG)) {
+                       log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
+                               dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
+                    }
+                    log_debug(LOG_NOTICE, "c_conn: %p forwarding %p", c_conn, rack_msg);
+                    remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
+                }
+            } else {
+                uint32_t rack_cnt = array_n(&dc->racks);
+                if (rack_cnt == 0)
+                    continue;
 
-				uint32_t ran_index = rand() % rack_cnt;
-				struct rack *rack = array_get(&dc->racks, ran_index);
+                uint32_t ran_index = rand() % rack_cnt;
+                struct rack *rack = array_get(&dc->racks, ran_index);
 
-				struct msg *rack_msg = msg_get(c_conn, msg->request, msg->redis);
-				if (rack_msg == NULL) {
-					log_debug(LOG_VERB, "whelp, looks like yer screwed now, buddy. no inter-rack messages for you!");
-					msg_put(rack_msg);
-					continue;
-				}
+                struct msg *rack_msg = msg_get(c_conn, msg->request, msg->redis);
+                if (rack_msg == NULL) {
+                    log_debug(LOG_VERB, "whelp, looks like yer screwed now, buddy. no inter-rack messages for you!");
+                    msg_put(rack_msg);
+                    continue;
+                }
 
-				msg_clone(msg, orig_mbuf, rack_msg);
-				rack_msg->swallow = true;
+                msg_clone(msg, orig_mbuf, rack_msg);
+                rack_msg->swallow = true;
 
-				if (log_loggable(LOG_DEBUG)) {
-				   log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
-					   	dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
-				}
-				remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
-			}
-		}
-	} else { //for read only requests
-		struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
-		remote_req_forward(ctx, c_conn, msg, rack, key, keylen);
-	}
+                if (log_loggable(LOG_DEBUG)) {
+                   log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
+                           dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
+                }
+                remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
+            }
+        }
+    } else { //for read only requests
+        struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
+        remote_req_forward(ctx, c_conn, msg, rack, key, keylen);
+    }
 }
 
 
 void
 req_recv_done(struct context *ctx, struct conn *conn,
-		      struct msg *msg, struct msg *nmsg)
+              struct msg *msg, struct msg *nmsg)
 {
     ASSERT(conn->client && !conn->proxy);
     ASSERT(msg->request);

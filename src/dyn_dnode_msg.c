@@ -41,7 +41,7 @@ dyn_parse_core(struct msg *r)
    }
 
    if (r->dyn_state == DYN_DONE || r->dyn_state == DYN_POST_DONE)
-   	return true;
+       return true;
 
    b = STAILQ_LAST(&r->mhdr, mbuf, next);
 
@@ -212,23 +212,23 @@ dyn_parse_core(struct msg *r)
          break;
 
       case DYN_SAME_DC:
-      	if (isdigit(ch)) {
-      		dmsg->same_dc = ch - '0';
-      		if (log_loggable(LOG_DEBUG)) {
-           	   log_debug(LOG_DEBUG, "DYN_SAME_DC %d", dmsg->same_dc);
-      		}
-      	} else if (ch == ' ' && isdigit(*(p-1))) {
-      		state = DYN_DATA_LEN;
-      		num = 0;
-      	} else {
-      		token = NULL;
-      		//loga("char is '%c %c %c %c'", *(p-2), *(p-1), ch, *(p+1));
-      		state = DYN_START;
-      		if (ch == '$')
-      		   p -= 1;
-      	}
+          if (isdigit(ch)) {
+              dmsg->same_dc = ch - '0';
+              if (log_loggable(LOG_DEBUG)) {
+                  log_debug(LOG_DEBUG, "DYN_SAME_DC %d", dmsg->same_dc);
+              }
+          } else if (ch == ' ' && isdigit(*(p-1))) {
+              state = DYN_DATA_LEN;
+              num = 0;
+          } else {
+              token = NULL;
+              //loga("char is '%c %c %c %c'", *(p-2), *(p-1), ch, *(p+1));
+              state = DYN_START;
+              if (ch == '$')
+                 p -= 1;
+          }
 
-      	break;
+          break;
 
       case DYN_DATA_LEN:
          if (log_loggable(LOG_DEBUG)) {
@@ -344,15 +344,15 @@ dyn_parse_core(struct msg *r)
    //we try to look for the start the next good one and throw away the bad part
    if (r->dyn_state == DYN_START) {
       r->result = MSG_PARSE_AGAIN;
-   	if (b->last == b->end) {
-   	   struct mbuf *nbuf = mbuf_get();
-   	   if (nbuf == NULL) {
-   		  loga("Unable to obtain a new mbuf for replacement!");
-   		  mbuf_put(b);
-   		  nbuf = mbuf_get();
-   		  mbuf_insert_head(&r->mhdr, nbuf);
-   		  r->pos = nbuf->pos;
-   		  return false;
+       if (b->last == b->end) {
+          struct mbuf *nbuf = mbuf_get();
+          if (nbuf == NULL) {
+             loga("Unable to obtain a new mbuf for replacement!");
+             mbuf_put(b);
+             nbuf = mbuf_get();
+             mbuf_insert_head(&r->mhdr, nbuf);
+             r->pos = nbuf->pos;
+             return false;
          }
 
          //replacing the bad mbuf with a new and empty mbuf
@@ -361,18 +361,18 @@ dyn_parse_core(struct msg *r)
          mbuf_put(b);
          r->pos = nbuf->pos;
          return false;
-   	} else { //split it and throw away the bad portion
+       } else { //split it and throw away the bad portion
            struct mbuf *nbuf;
 
            nbuf = mbuf_split(&r->mhdr, r->pos, NULL, NULL);
-   	   if (nbuf == NULL) {
-   	        return DN_ENOMEM;
-   	   }
-   	   mbuf_insert(&r->mhdr, nbuf);
-   	   mbuf_remove(&r->mhdr, b);
-   	   r->pos = nbuf->pos;
-   	   return false;
-   	}
+          if (nbuf == NULL) {
+               return DN_ENOMEM;
+          }
+          mbuf_insert(&r->mhdr, nbuf);
+          mbuf_remove(&r->mhdr, b);
+          r->pos = nbuf->pos;
+          return false;
+       }
 
    }
 
@@ -385,13 +385,13 @@ dyn_parse_core(struct msg *r)
    }
 
    if (r->pos == b->last) {
-   	if (log_loggable(LOG_DEBUG)) {
+       if (log_loggable(LOG_DEBUG)) {
            log_debug(LOG_DEBUG, "Forward to reading the new block of data");
-   	}
-   	r->dyn_state = DYN_START;
-   	r->result = MSG_PARSE_AGAIN;
-   	token = NULL;
-   	return false;
+       }
+       r->dyn_state = DYN_START;
+       r->result = MSG_PARSE_AGAIN;
+       token = NULL;
+       return false;
    }
 
    if (log_loggable(LOG_VVERB)) {
@@ -450,207 +450,207 @@ dyn_parse_core(struct msg *r)
 void
 dyn_parse_req(struct msg *r)
 {
-	if (log_loggable(LOG_VVERB)) {
-		log_debug(LOG_VVERB, ":::::::::::::::::::::: In dyn_parse_req, start to process request :::::::::::::::::::::: ");
-		msg_dump(r);
-	}
+    if (log_loggable(LOG_VVERB)) {
+        log_debug(LOG_VVERB, ":::::::::::::::::::::: In dyn_parse_req, start to process request :::::::::::::::::::::: ");
+        msg_dump(r);
+    }
 
-	bool done_parsing = false;
-	struct mbuf *b = STAILQ_LAST(&r->mhdr, mbuf, next);
+    bool done_parsing = false;
+    struct mbuf *b = STAILQ_LAST(&r->mhdr, mbuf, next);
 
-	if (dyn_parse_core(r)) {
-		struct dmsg *dmsg = r->dmsg;
-		struct conn *conn = r->owner;
-		conn->same_dc = dmsg->same_dc;
+    if (dyn_parse_core(r)) {
+        struct dmsg *dmsg = r->dmsg;
+        struct conn *conn = r->owner;
+        conn->same_dc = dmsg->same_dc;
 
-		if (dmsg->type != DMSG_UNKNOWN && dmsg->type != DMSG_REQ &&
-				dmsg->type != DMSG_REQ_FORWARD && dmsg->type != GOSSIP_SYN) {
-			r->state = 0;
-			r->result = MSG_PARSE_OK;
-			r->dyn_state = DYN_DONE;
-			return;
-		}
+        if (dmsg->type != DMSG_UNKNOWN && dmsg->type != DMSG_REQ &&
+            dmsg->type != DMSG_REQ_FORWARD && dmsg->type != GOSSIP_SYN) {
+            r->state = 0;
+            r->result = MSG_PARSE_OK;
+            r->dyn_state = DYN_DONE;
+            return;
+        }
 
-		if (r->dyn_state == DYN_DONE && dmsg->bit_field == 1) {
-			dmsg->owner->owner->dnode_secured = 1;
-			r->owner->dnode_crypto_state = 1;
-			r->dyn_state = DYN_POST_DONE;
-			r->result = MSG_PARSE_REPAIR;
+        if (r->dyn_state == DYN_DONE && dmsg->bit_field == 1) {
+            dmsg->owner->owner->dnode_secured = 1;
+            r->owner->dnode_crypto_state = 1;
+            r->dyn_state = DYN_POST_DONE;
+            r->result = MSG_PARSE_REPAIR;
 
-			if (dmsg->mlen > 1) {
-				//Decrypt AES key
-				dyn_rsa_decrypt(dmsg->data, aes_decrypted_buf);
-				strncpy(r->owner->aes_key, aes_decrypted_buf, strlen(aes_decrypted_buf));
-			}
+            if (dmsg->mlen > 1) {
+                //Decrypt AES key
+                dyn_rsa_decrypt(dmsg->data, aes_decrypted_buf);
+                strncpy(r->owner->aes_key, aes_decrypted_buf, strlen(aes_decrypted_buf));
+            }
 
-			if (dmsg->plen + b->pos <= b->last) {
-				struct mbuf *decrypted_buf = mbuf_get();
-				if (decrypted_buf == NULL) {
-					loga("Unable to obtain an mbuf for dnode msg's header!");
-					r->result = MSG_OOM_ERROR;
-					return;
-				}
+            if (dmsg->plen + b->pos <= b->last) {
+                struct mbuf *decrypted_buf = mbuf_get();
+                if (decrypted_buf == NULL) {
+                    loga("Unable to obtain an mbuf for dnode msg's header!");
+                    r->result = MSG_OOM_ERROR;
+                    return;
+                }
 
-				dyn_aes_decrypt(b->pos, dmsg->plen, decrypted_buf, r->owner->aes_key);
+                dyn_aes_decrypt(b->pos, dmsg->plen, decrypted_buf, r->owner->aes_key);
 
-				b->pos = b->pos + dmsg->plen;
-				r->pos = decrypted_buf->start;
-				mbuf_copy(decrypted_buf, b->pos, mbuf_length(b));
+                b->pos = b->pos + dmsg->plen;
+                r->pos = decrypted_buf->start;
+                mbuf_copy(decrypted_buf, b->pos, mbuf_length(b));
 
-				mbuf_insert(&r->mhdr, decrypted_buf);
-				mbuf_remove(&r->mhdr, b);
-				mbuf_put(b);
+                mbuf_insert(&r->mhdr, decrypted_buf);
+                mbuf_remove(&r->mhdr, b);
+                mbuf_put(b);
 
-				r->mlen = mbuf_length(decrypted_buf);
+                r->mlen = mbuf_length(decrypted_buf);
 
-				if (r->redis) {
-					return redis_parse_req(r);
-				}
+                if (r->redis) {
+                    return redis_parse_req(r);
+                }
 
-				return memcache_parse_req(r);
-			}
+                return memcache_parse_req(r);
+            }
 
-			//substract alraedy received bytes
-			dmsg->plen -= b->last - b->pos;
+            //substract alraedy received bytes
+            dmsg->plen -= b->last - b->pos;
 
-			return;
-		} else if (r->dyn_state == DYN_POST_DONE) {
-			struct mbuf *last_buf = STAILQ_LAST(&r->mhdr, mbuf, next);
-			if (last_buf->read_flip == 1) {
-				if (r->redis)
-					redis_parse_req(r);
-				else
-					memcache_parse_req(r);
-			} else {
-				r->result = MSG_PARSE_AGAIN;
-			}
-			return;
-		}
+            return;
+        } else if (r->dyn_state == DYN_POST_DONE) {
+            struct mbuf *last_buf = STAILQ_LAST(&r->mhdr, mbuf, next);
+            if (last_buf->read_flip == 1) {
+                if (r->redis)
+                    redis_parse_req(r);
+                else
+                    memcache_parse_req(r);
+            } else {
+                r->result = MSG_PARSE_AGAIN;
+            }
+            return;
+        }
 
-		if (dmsg->type == GOSSIP_SYN) {
-			//TODOs: need to address multi-buffer msg later
-			dmsg->payload = b->pos;
+        if (dmsg->type == GOSSIP_SYN) {
+            //TODOs: need to address multi-buffer msg later
+            dmsg->payload = b->pos;
 
-			b->pos = b->pos + dmsg->plen;
-			r->pos = b->pos;
+            b->pos = b->pos + dmsg->plen;
+            r->pos = b->pos;
 
-			done_parsing = true;
-		}
+            done_parsing = true;
+        }
 
-		if (done_parsing)
-			return;
+        if (done_parsing)
+            return;
 
-		if (r->redis) {
-			return redis_parse_req(r);
-		}
+        if (r->redis) {
+            return redis_parse_req(r);
+        }
 
-		return memcache_parse_req(r);
-	}
+        return memcache_parse_req(r);
+    }
 
-	//bad case
-	if (log_loggable(LOG_VVERB)) {
-		log_debug(LOG_VVERB, "Bad or splitted message");  //fix me to do something
-		msg_dump(r);
-	}
-	r->result = MSG_PARSE_AGAIN;
+    //bad case
+    if (log_loggable(LOG_VVERB)) {
+        log_debug(LOG_VVERB, "Bad or splitted message");  //fix me to do something
+        msg_dump(r);
+    }
+    r->result = MSG_PARSE_AGAIN;
 }
 
 
 void dyn_parse_rsp(struct msg *r)
 {
-	if (log_loggable(LOG_VVERB)) {
-		log_debug(LOG_VVERB, ":::::::::::::::::::::: In dyn_parse_rsp, start to process response :::::::::::::::::::::::: ");
-		msg_dump(r);
-	}
+    if (log_loggable(LOG_VVERB)) {
+        log_debug(LOG_VVERB, ":::::::::::::::::::::: In dyn_parse_rsp, start to process response :::::::::::::::::::::::: ");
+        msg_dump(r);
+    }
 
-	bool done_parsing = false;
-	struct mbuf *b = STAILQ_LAST(&r->mhdr, mbuf, next);
-	if (dyn_parse_core(r)) {
-		struct dmsg *dmsg = r->dmsg;
-		struct conn *conn = r->owner;
-		conn->same_dc = dmsg->same_dc;
+    bool done_parsing = false;
+    struct mbuf *b = STAILQ_LAST(&r->mhdr, mbuf, next);
+    if (dyn_parse_core(r)) {
+        struct dmsg *dmsg = r->dmsg;
+        struct conn *conn = r->owner;
+        conn->same_dc = dmsg->same_dc;
 
-		if (dmsg->type != DMSG_UNKNOWN && dmsg->type != DMSG_RES) {
-			log_debug(LOG_DEBUG, "Resp parser: I got a dnode msg of type %d", dmsg->type);
-			r->state = 0;
-			r->result = MSG_PARSE_OK;
-			r->dyn_state = DYN_DONE;
-			return;
-		}
+        if (dmsg->type != DMSG_UNKNOWN && dmsg->type != DMSG_RES) {
+            log_debug(LOG_DEBUG, "Resp parser: I got a dnode msg of type %d", dmsg->type);
+            r->state = 0;
+            r->result = MSG_PARSE_OK;
+            r->dyn_state = DYN_DONE;
+            return;
+        }
 
-		if (r->dyn_state == DYN_DONE && dmsg->bit_field == 1) {
-			dmsg->owner->owner->dnode_secured = 1;
-			r->owner->dnode_crypto_state = 1;
-			r->dyn_state = DYN_POST_DONE;
-			r->result = MSG_PARSE_REPAIR;
+        if (r->dyn_state == DYN_DONE && dmsg->bit_field == 1) {
+            dmsg->owner->owner->dnode_secured = 1;
+            r->owner->dnode_crypto_state = 1;
+            r->dyn_state = DYN_POST_DONE;
+            r->result = MSG_PARSE_REPAIR;
 
-			if (dmsg->mlen > 1) {
-				//Decrypt AES key
-				dyn_rsa_decrypt(dmsg->data, aes_decrypted_buf);
-				strncpy(r->owner->aes_key, aes_decrypted_buf, strlen(aes_decrypted_buf));
-			}
+            if (dmsg->mlen > 1) {
+                //Decrypt AES key
+                dyn_rsa_decrypt(dmsg->data, aes_decrypted_buf);
+                strncpy(r->owner->aes_key, aes_decrypted_buf, strlen(aes_decrypted_buf));
+            }
 
-			if (dmsg->plen + b->pos <= b->last) {
-				struct mbuf *decrypted_buf = mbuf_get();
-				if (decrypted_buf == NULL) {
-					loga("Unable to obtain an mbuf for dnode msg's header!");
-					r->result = MSG_OOM_ERROR;
-					return;
-				}
+            if (dmsg->plen + b->pos <= b->last) {
+                struct mbuf *decrypted_buf = mbuf_get();
+                if (decrypted_buf == NULL) {
+                    loga("Unable to obtain an mbuf for dnode msg's header!");
+                    r->result = MSG_OOM_ERROR;
+                    return;
+                }
 
-				dyn_aes_decrypt(b->pos, dmsg->plen, decrypted_buf, r->owner->aes_key);
+                dyn_aes_decrypt(b->pos, dmsg->plen, decrypted_buf, r->owner->aes_key);
 
-				b->pos = b->pos + dmsg->plen;
-				r->pos = decrypted_buf->start;
-				mbuf_copy(decrypted_buf, b->pos, mbuf_length(b));
+                b->pos = b->pos + dmsg->plen;
+                r->pos = decrypted_buf->start;
+                mbuf_copy(decrypted_buf, b->pos, mbuf_length(b));
 
-				mbuf_insert(&r->mhdr, decrypted_buf);
-				mbuf_remove(&r->mhdr, b);
-				mbuf_put(b);
+                mbuf_insert(&r->mhdr, decrypted_buf);
+                mbuf_remove(&r->mhdr, b);
+                mbuf_put(b);
 
-				r->mlen = mbuf_length(decrypted_buf);
-				if (r->redis) {
-					return redis_parse_rsp(r);
-				}
+                r->mlen = mbuf_length(decrypted_buf);
+                if (r->redis) {
+                    return redis_parse_rsp(r);
+                }
 
-				return memcache_parse_rsp(r);
-			}
+                return memcache_parse_rsp(r);
+            }
 
-			//substract alraedy received bytes
-			dmsg->plen -= b->last - b->pos;
-			return;
+            //substract alraedy received bytes
+            dmsg->plen -= b->last - b->pos;
+            return;
 
-		} else if (r->dyn_state == DYN_POST_DONE) {
-			struct mbuf *last_buf = STAILQ_LAST(&r->mhdr, mbuf, next);
-			if (last_buf->read_flip == 1) {
-				if (r->redis)
-					redis_parse_rsp(r);
-				else
-					memcache_parse_rsp(r);
+        } else if (r->dyn_state == DYN_POST_DONE) {
+            struct mbuf *last_buf = STAILQ_LAST(&r->mhdr, mbuf, next);
+            if (last_buf->read_flip == 1) {
+                if (r->redis)
+                    redis_parse_rsp(r);
+                else
+                    memcache_parse_rsp(r);
 
-			} else {
-				r->result = MSG_PARSE_AGAIN;
-			}
-			return;
-		}
+            } else {
+                r->result = MSG_PARSE_AGAIN;
+            }
+            return;
+        }
 
-		if (done_parsing)
-			return;
+        if (done_parsing)
+            return;
 
-		if (r->redis) {
-			return redis_parse_rsp(r);
-		}
+        if (r->redis) {
+            return redis_parse_rsp(r);
+        }
 
-		return memcache_parse_rsp(r);
-	}
+        return memcache_parse_rsp(r);
+    }
 
-	//bad case
-	if (log_loggable(LOG_DEBUG)) {
-		log_debug(LOG_DEBUG, "Resp: bad message - cannot parse");  //fix me to do something
-		msg_dump(r);
-	}
+    //bad case
+    if (log_loggable(LOG_DEBUG)) {
+        log_debug(LOG_DEBUG, "Resp: bad message - cannot parse");  //fix me to do something
+        msg_dump(r);
+    }
 
-	r->result = MSG_PARSE_AGAIN;
+    r->result = MSG_PARSE_AGAIN;
 
 }
 
@@ -666,11 +666,11 @@ dmsg_free(struct dmsg *dmsg)
 void
 dmsg_put(struct dmsg *dmsg)
 {
-	if (log_loggable(LOG_VVVERB)) {
-		log_debug(LOG_VVVERB, "put dmsg %p id %"PRIu64"", dmsg, dmsg->id);
-	}
-	nfree_dmsgq++;
-	TAILQ_INSERT_HEAD(&free_dmsgq, dmsg, m_tqe);
+    if (log_loggable(LOG_VVVERB)) {
+        log_debug(LOG_VVVERB, "put dmsg %p id %"PRIu64"", dmsg, dmsg->id);
+    }
+    nfree_dmsgq++;
+    TAILQ_INSERT_HEAD(&free_dmsgq, dmsg, m_tqe);
 }
 
 void
@@ -781,9 +781,9 @@ dmsg_write(struct mbuf *mbuf, uint64_t msg_id, uint8_t type,
     //same-dc
     mbuf_write_char(mbuf, ' ');
     if (conn->same_dc)
-   	 mbuf_write_uint8(mbuf, 1);
+        mbuf_write_uint8(mbuf, 1);
     else
-   	 mbuf_write_uint8(mbuf, 0);
+        mbuf_write_uint8(mbuf, 0);
 
     //data
     mbuf_write_char(mbuf, ' ');
@@ -840,9 +840,9 @@ dmsg_write_mbuf(struct mbuf *mbuf, uint64_t msg_id, uint8_t type, struct conn *c
     //same-dc
     mbuf_write_char(mbuf, ' ');
     if (conn->same_dc)
-   	 mbuf_write_uint8(mbuf, 1);
+        mbuf_write_uint8(mbuf, 1);
     else
-   	 mbuf_write_uint8(mbuf, 0);
+        mbuf_write_uint8(mbuf, 0);
 
     //mbuf_write_string(mbuf, &CRLF_STR);
     mbuf_write_char(mbuf, ' ');

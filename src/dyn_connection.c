@@ -38,10 +38,10 @@
  *                 +         +          +
  *                 |         |          |
  *                 |       Proxy        |
- *                 |     dn_proxy.[ch]  |
+ *                 |     dyn_proxy.[ch]  |
  *                 /                    \
  *              Client                Server
- *           dn_client.[ch]         dn_server.[ch]
+ *           dyn_client.[ch]         dyn_server.[ch]
  *
  * Dynomite essentially multiplexes m client connections over n server
  * connections. Usually m >> n, so that dynomite can pipeline requests
@@ -183,6 +183,7 @@ _conn_get(void)
     conn->attempted_reconnect = 0;
     conn->non_bytes_recv = 0;
     //conn->non_bytes_send = 0;
+    conn->consistency = LOCAL_ONE;
 
     unsigned char *ase_key = generate_aes_key();
     strncpy(conn->aes_key, ase_key, strlen(ase_key)); //generate a new key for each connection
@@ -190,6 +191,17 @@ _conn_get(void)
     return conn;
 }
 
+inline void
+conn_set_consistency(struct conn *conn, consistency_t cons)
+{
+    conn->consistency = cons;
+}
+
+inline consistency_t
+conn_get_consistency(struct conn *conn)
+{
+    return conn->consistency;
+}
 
 void
 conn_add_in_queue_msg(struct conn *conn, struct msg *msg)
@@ -639,4 +651,3 @@ conn_print(struct conn *conn)
 	log_debug(LOG_VERB, "eof %d", conn->eof);
 	log_debug(LOG_VERB, "err %d", conn->err);
 }
-
