@@ -24,6 +24,7 @@
 #include "dyn_server.h"
 #include "dyn_dnode_peer.h"
 
+static rstatus_t msg_write_all_rsp_handler(struct msg *req, struct msg *rsp);
 
 struct msg *
 req_get(struct conn *conn)
@@ -252,7 +253,7 @@ req_server_enqueue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
     }
 
     TAILQ_INSERT_TAIL(&conn->imsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue inq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p enqueue inq %d:%d", conn, msg->id, msg->parent_id);
 
     if (!conn->dyn_mode) {
        stats_server_incr(ctx, conn->owner, in_queue);
@@ -271,7 +272,7 @@ req_server_dequeue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
     ASSERT(!conn->client && !conn->proxy);
 
     TAILQ_REMOVE(&conn->imsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p dequeue inq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p dequeue inq %d:%d", conn, msg->id, msg->parent_id);
 
     stats_server_decr(ctx, conn->owner, in_queue);
     stats_server_decr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
@@ -285,7 +286,7 @@ req_client_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg->stime_in_microsec = dn_usec_now();
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, c_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue outq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
 }
 
 void
@@ -295,7 +296,7 @@ req_server_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     ASSERT(!conn->client && !conn->proxy);
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue outq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
 
     stats_server_incr(ctx, conn->owner, out_queue);
     stats_server_incr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
@@ -322,7 +323,7 @@ req_server_dequeue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg_tmo_delete(msg);
 
     TAILQ_REMOVE(&conn->omsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p dequeue outq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p dequeue outq %d:%d", conn, msg->id, msg->parent_id);
 
     stats_server_decr(ctx, conn->owner, out_queue);
     stats_server_decr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
@@ -608,11 +609,13 @@ remote_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
     struct server *peer = p_conn->owner;
 
     if (peer->is_local) {
-        log_debug(LOG_NOTICE, "c_conn: %p forwarding %p is local", c_conn, msg, p_conn);
+        log_debug(LOG_NOTICE, "c_conn: %p forwarding %d:%d is local", c_conn,
+                  msg->id, msg->parent_id);
         local_req_forward(ctx, c_conn, msg, key, keylen);
         return;
     } else {
-        log_debug(LOG_NOTICE, "c_conn: %p forwarding %p to p_conn %p", c_conn, msg, p_conn);
+        log_debug(LOG_NOTICE, "c_conn: %p forwarding %d:%d to p_conn %p", c_conn,
+                  msg->id, msg->parent_id, p_conn);
         dnode_peer_req_forward(ctx, c_conn, p_conn, msg, rack, key, keylen);
     }
 }
@@ -668,6 +671,7 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
     }
 
     if (request_send_to_all_racks(msg)) {
+        msg->rsp_handler = msg_write_all_rsp_handler;
         uint32_t dc_cnt = array_n(&pool->datacenters);
         uint32_t dc_index;
         for(dc_index = 0; dc_index < dc_cnt; dc_index++) {
@@ -684,11 +688,13 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                 uint32_t rack_index;
                 log_debug(LOG_NOTICE, "same DC racks:%d expect replies %d",
                           rack_cnt, rack_cnt/2 + 1);
+                msg->pending_responses = rack_cnt;
                 for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
                     struct rack *rack = array_get(&dc->racks, rack_index);
                     //log_debug(LOG_DEBUG, "rack name '%.*s'",
                     //            rack->name->len, rack->name->data);
                     struct msg *rack_msg;
+                    // clone message even for local node
                     if (string_compare(rack->name, &pool->rack) == 0 ) {
                         rack_msg = msg;
                     } else {
@@ -701,7 +707,8 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                         }
 
                         msg_clone(msg, orig_mbuf, rack_msg);
-                        log_debug(LOG_NOTICE, "msg %p clone to rack msg %p", msg, rack_msg);
+                        log_debug(LOG_NOTICE, "msg (%d:%d) clone to rack msg (%d:%d)",
+                                  msg->id, msg->parent_id, rack_msg->id, rack_msg->parent_id);
                         rack_msg->swallow = true;
                     }
 
@@ -709,7 +716,8 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                        log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
                                dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
                     }
-                    log_debug(LOG_NOTICE, "c_conn: %p forwarding %p", c_conn, rack_msg);
+                    log_debug(LOG_NOTICE, "c_conn: %p forwarding (%d:%d)",
+                              c_conn, rack_msg->id, rack_msg->parent_id);
                     remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
                 }
             } else {
@@ -763,6 +771,9 @@ req_recv_done(struct context *ctx, struct conn *conn,
         return;
     }
 
+    // add the message to the dict
+    log_debug(LOG_NOTICE, "conn %p adding message %d:%d", conn, msg->id, msg->parent_id);
+    dictAdd(conn->outstanding_msgs_dict, &msg->id, msg);
     req_forward(ctx, conn, msg);
 }
 
@@ -848,3 +859,36 @@ req_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
 
 }
 
+rstatus_t
+msg_read_all_rsp_handler(struct msg *req, struct msg *rsp)
+{
+    return DN_ENO_IMPL;
+}
+
+rstatus_t
+msg_write_all_rsp_handler(struct msg *req, struct msg *rsp)
+{
+    // we own the response. We will free it when done.
+    return DN_OK;
+    rsp_put(rsp);
+    if(--req->pending_responses) {
+        log_debug(LOG_NOTICE, "msg %d:%d received response %d:%d need %d more",
+                  req->id, req->parent_id, rsp->id, rsp->parent_id,
+                  req->pending_responses);
+        return DN_EAGAIN;
+    }
+    log_debug(LOG_NOTICE, "msg %d received all responses", req->id);
+    return DN_OK;
+}
+
+rstatus_t
+msg_read_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
+{
+    return DN_ENO_IMPL;
+}
+
+rstatus_t
+msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
+{
+    return DN_ENO_IMPL;
+}

@@ -121,6 +121,12 @@ static struct msg_tqh free_msgq; /* free msg q */
 static struct rbtree tmo_rbt;    /* timeout rbtree */
 static struct rbnode tmo_rbs;    /* timeout rbtree sentinel */
 
+static inline rstatus_t
+msg_cant_handle_response(struct msg *req, struct msg *rsp)
+{
+    return DN_OK;
+}
+
 static struct msg *
 msg_from_rbe(struct rbnode *node)
 {
@@ -234,6 +240,7 @@ _msg_get(bool force_alloc)
 done:
     /* c_tqe, s_tqe, and m_tqe are left uninitialized */
     msg->id = ++msg_id;
+    msg->parent_id = 0;
     msg->peer = NULL;
     msg->owner = NULL;
     msg->stime_in_microsec = 0L;
@@ -293,6 +300,7 @@ done:
     msg->dmsg = NULL;
     msg->msg_type = 0;
     msg->dyn_error = 0;
+    msg->rsp_handler = msg_cant_handle_response;
     return msg;
 }
 
@@ -369,6 +377,7 @@ msg_get(struct conn *conn, bool request, bool redis)
 rstatus_t 
 msg_clone(struct msg *src, struct mbuf *mbuf_start, struct msg *target)
 {
+    target->parent_id = src->id;
     target->owner = src->owner;
     target->request = src->request;
     target->redis = src->redis;
@@ -1122,3 +1131,4 @@ msg_send(struct context *ctx, struct conn *conn)
 
     return DN_OK;
 }
+

@@ -113,6 +113,12 @@ conn_to_ctx(struct conn *conn)
     return pool->ctx;
 }
 
+static rstatus_t
+conn_cant_handle_response(struct conn *conn, msgid_t reqid, struct msg *resp)
+{
+    return DN_OK;
+}
+
 static struct conn *
 _conn_get(void)
 {
@@ -184,6 +190,8 @@ _conn_get(void)
     conn->non_bytes_recv = 0;
     //conn->non_bytes_send = 0;
     conn->consistency = LOCAL_ONE;
+    conn->type = CONN_UNSPECIFIED;
+    conn->rsp_handler = conn_cant_handle_response; // default rsp handler
 
     unsigned char *ase_key = generate_aes_key();
     strncpy(conn->aes_key, ase_key, strlen(ase_key)); //generate a new key for each connection
@@ -260,6 +268,7 @@ conn_get_peer(void *owner, bool client, bool redis)
          * dyn client receives a request, possibly parsing it, and sends a
          * response downstream.
          */
+        conn->type = CONN_DNODE_PEER_CLIENT;
         conn->recv = msg_recv;
         conn->recv_next = dnode_req_recv_next;
         conn->recv_done = dnode_req_recv_done;
@@ -284,6 +293,7 @@ conn_get_peer(void *owner, bool client, bool redis)
          * dyn server receives a response, possibly parsing it, and sends a
          * request upstream.
          */
+        conn->type = CONN_DNODE_PEER_SERVER;
         conn->recv = msg_recv;
         conn->recv_next = dnode_rsp_recv_next;
         conn->recv_done = dnode_rsp_recv_done;
@@ -333,6 +343,7 @@ conn_get(void *owner, bool client, bool redis)
          * client receives a request, possibly parsing it, and sends a
          * response downstream.
          */
+        conn->type = CONN_CLIENT;
         conn->recv = msg_recv;
         conn->recv_next = req_recv_next;
         conn->recv_done = req_recv_done;
@@ -356,6 +367,7 @@ conn_get(void *owner, bool client, bool redis)
          * server receives a response, possibly parsing it, and sends a
          * request upstream.
          */
+        conn->type = CONN_SERVER;
         conn->recv = msg_recv;
         conn->recv_next = rsp_recv_next;
         conn->recv_done = rsp_recv_done;
@@ -396,6 +408,7 @@ conn_get_dnode(void *owner)
     }
 
     conn->redis = pool->redis;
+    conn->type = CONN_DNODE_SERVER;
 
     conn->dnode_server = 1;
     conn->dyn_mode = 1;
@@ -438,6 +451,7 @@ conn_get_proxy(void *owner)
         return NULL;
     }
 
+    conn->type = CONN_PROXY;
     conn->redis = pool->redis;
 
     conn->proxy = 1;

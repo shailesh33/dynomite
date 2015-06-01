@@ -24,6 +24,28 @@
 #include "dyn_server.h"
 #include "dyn_client.h"
 
+static rstatus_t client_handle_response(struct conn *conn, msgid_t msg,
+                                        struct msg *rsp);
+
+unsigned int
+dict_msg_id_hash(const void *msg_id)
+{
+    unsigned int ret = (unsigned int) *(uint64_t*)msg_id;
+    log_debug(LOG_NOTICE, "returning hash key %d", ret);
+    return ret;
+    //return dictGenHashFunction(msg_id, sizeof(*msg_id));
+}
+
+dictType msg_table_dict_type = {
+	dict_msg_id_hash,            /* hash function */
+    NULL,                        /* key dup */
+    NULL,                        /* val dup */
+    NULL,                        /* key compare */
+    NULL,                        /* key destructor */
+    NULL                         /* val destructor */
+};
+
+
 void
 client_ref(struct conn *conn, void *owner)
 {
@@ -46,7 +68,10 @@ client_ref(struct conn *conn, void *owner)
 
     /* owner of the client connection is the server pool */
     conn->owner = owner;
-    conn_set_consistency(LOCAL_QUORUM);
+    conn_set_consistency(conn, LOCAL_QUORUM);
+    conn->outstanding_msgs_dict = dictCreate(&msg_table_dict_type, NULL);
+    conn->type = CONN_CLIENT;
+    conn->rsp_handler = client_handle_response;
 
     log_debug(LOG_VVERB, "ref conn %p owner %p into pool '%.*s'", conn, pool,
               pool->name.len, pool->name.data);
@@ -66,7 +91,7 @@ client_unref(struct conn *conn)
     ASSERT(pool->dn_conn_q != 0);
     pool->dn_conn_q--;
     TAILQ_REMOVE(&pool->c_conn_q, conn, conn_tqe);
-
+    dictRelease(conn->outstanding_msgs_dict);
     log_debug(LOG_VVERB, "unref conn %p owner %p from pool '%.*s'", conn,
               pool, pool->name.len, pool->name.data);
 }
@@ -195,3 +220,20 @@ client_close(struct context *ctx, struct conn *conn)
 
     conn_put(conn);
 }
+
+rstatus_t
+client_handle_response(struct conn *conn, msgid_t reqid, struct msg *rsp)
+{
+    // lookup for the message in the hash table
+    // call the response handler on that message
+    //return DN_OK;
+    ASSERT(conn->type == CONN_CLIENT);
+    struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
+    if (!req) {
+        log_debug(LOG_NOTICE, "conn %p no message with id %d", conn, reqid);
+        req = TAILQ_FIRST(&conn->omsg_q);
+    }
+    ASSERT(req);
+    return msg_handle_response(req, rsp);
+}
+

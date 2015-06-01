@@ -189,11 +189,9 @@ rsp_filter(struct context *ctx, struct conn *conn, struct msg *msg)
         conn->dequeue_outq(ctx, conn, pmsg);
         pmsg->done = 1;
 
-        if (log_loggable(LOG_DEBUG)) {
-           log_debug(LOG_DEBUG, "swallow rsp %"PRIu64" len %"PRIu32" of req "
+        log_debug(LOG_NOTICE, "swallow rsp %"PRIu64" len %"PRIu32" of req "
                   "%"PRIu64" on s %d", msg->id, msg->mlen, pmsg->id,
                   conn->sd);
-        }
 
         rsp_put(msg);
         req_put(pmsg);
@@ -218,42 +216,53 @@ rsp_forward_stats(struct context *ctx, struct server *server, struct msg *msg)
 }
 
 static void
-rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *msg)
+rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
 {
     rstatus_t status;
-    struct msg *pmsg;
+    struct msg *req;
     struct conn *c_conn;
-
+    ASSERT(s_conn->type == CONN_SERVER);
     ASSERT(!s_conn->client && !s_conn->proxy);
 
     /* response from server implies that server is ok and heartbeating */
     server_ok(ctx, s_conn);
 
     /* dequeue peer message (request) from server */
-    pmsg = TAILQ_FIRST(&s_conn->omsg_q);
-    ASSERT(pmsg != NULL && pmsg->peer == NULL);
-    ASSERT(pmsg->request && !pmsg->done);
+    req = TAILQ_FIRST(&s_conn->omsg_q);
+    ASSERT(req != NULL && req->peer == NULL);
+    ASSERT(req->request && !req->done);
 
-    s_conn->dequeue_outq(ctx, s_conn, pmsg);
-    pmsg->done = 1;
+    s_conn->dequeue_outq(ctx, s_conn, req);
+    req->done = 1;
 
-    /* establish msg <-> pmsg (response <-> request) link */
-    pmsg->peer = msg;
-    msg->peer = pmsg;
+    /* establish rsp <-> req (response <-> request) link */
+    log_debug(LOG_NOTICE, "%p <-> %p", req, rsp);
+    req->peer = rsp;
+    rsp->peer = req;
 
-    msg->pre_coalesce(msg);
+    rsp->pre_coalesce(rsp);
 
-    c_conn = pmsg->owner;
-    //ASSERT(c_conn->client && !c_conn->proxy);
+    c_conn = req->owner;
+    
+    ASSERT(c_conn->client && !c_conn->proxy);
 
+    rsp_forward_stats(ctx, s_conn->owner, rsp);
+    // this should really be the message's response handler be doing it
     if (req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
-        status = event_add_out(ctx->evb, c_conn);
-        if (status != DN_OK) {
-            c_conn->err = errno;
+        // handler owns the response now
+        log_debug(LOG_NOTICE, "handle rsp %d:%d for conn %p", rsp->id, rsp->parent_id, c_conn);
+        rstatus_t status = DN_OK;
+        if (c_conn->type == CONN_CLIENT)
+            status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
+                                          req->id : req->parent_id, rsp);
+        if (status == DN_OK) {
+            //req_put(req);
+            status = event_add_out(ctx->evb, c_conn);
+            if (status != DN_OK) {
+                c_conn->err = errno;
+            }
         }
-    }
-
-    rsp_forward_stats(ctx, s_conn->owner, msg);
+     }
 }
 
 void
@@ -285,11 +294,12 @@ rsp_send_next(struct context *ctx, struct conn *conn)
            (conn->dnode_client && !conn->dnode_server));
 
     pmsg = TAILQ_FIRST(&conn->omsg_q);
+    log_debug(LOG_NOTICE, "%p", pmsg);
     if (pmsg == NULL || !req_done(conn, pmsg)) {
         /* nothing is outstanding, initiate close? */
         if (pmsg == NULL && conn->eof) {
             conn->done = 1;
-            log_debug(LOG_INFO, "c %d is done", conn->sd);
+            log_debug(LOG_NOTICE, "c %d is done", conn->sd);
         }
 
         status = event_del_out(ctx->evb, conn);

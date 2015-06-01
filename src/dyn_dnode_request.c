@@ -28,7 +28,7 @@ dnode_req_get(struct conn *conn)
     return msg;
 }
 
-void
+static void
 dnode_req_put(struct msg *msg)
 {
     req_put(msg);
@@ -56,7 +56,8 @@ dnode_req_peer_enqueue_imsgq(struct context *ctx, struct conn *conn, struct msg 
     ASSERT(msg->request);
     ASSERT(!conn->dnode_client && !conn->dnode_server);
 
-    log_debug(LOG_NOTICE, "conn %p enqueue inq %p calling req_server_enqueue_imsgq", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p enqueue inq %d:%d calling req_server_enqueue_imsgq",
+              conn, msg->id, msg->parent_id);
     req_server_enqueue_imsgq(ctx, conn, msg);
 }
 
@@ -67,7 +68,7 @@ dnode_req_peer_dequeue_imsgq(struct context *ctx, struct conn *conn, struct msg 
     ASSERT(!conn->dnode_client && !conn->dnode_server);
 
     TAILQ_REMOVE(&conn->imsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p dequeue inq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p dequeue inq %d:%d", conn, msg->id, msg->parent_id);
 
     struct server_pool *pool = (struct server_pool *) array_get(&ctx->pool, 0);
     stats_pool_decr(ctx, pool, peer_in_queue);
@@ -96,7 +97,7 @@ dnode_req_peer_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg 
     ASSERT(!conn->dnode_client && !conn->dnode_server);
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue outq %p", conn, msg);
+    log_debug(LOG_NOTICE, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
 
     //use only the 1st pool
     struct server_pool *pool = (struct server_pool *) array_get(&ctx->pool, 0);
@@ -158,7 +159,7 @@ dnode_req_filter(struct context *ctx, struct conn *conn, struct msg *msg)
         return true;
     }
 
-    /* dynomite hanlder */
+    /* dynomite handler */
     if (msg->dmsg != NULL) {
         if (dmsg_process(ctx, conn, msg->dmsg)) {
             dnode_req_put(msg);
@@ -294,6 +295,7 @@ dnode_req_recv_done(struct context *ctx, struct conn *conn,
         return;
     }
 
+    log_debug(LOG_NOTICE, "received msg: %p", msg);
     dnode_req_forward(ctx, conn, msg);
 }
 

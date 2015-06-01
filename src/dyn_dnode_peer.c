@@ -64,7 +64,7 @@ dnode_peer_timeout(struct msg *msg, struct conn *conn)
     struct server *server;
     struct server_pool *pool;
 
-    ASSERT(conn->dyno_mode && !conn->dnode_client && !conn->dnode_server);
+    ASSERT(!conn->dnode_client && !conn->dnode_server);
 
     server = conn->owner;
     pool = server->owner;
@@ -585,7 +585,7 @@ dnode_peer_close(struct context *ctx, struct conn *conn)
         conn->dequeue_outq(ctx, conn, msg);
 
         if (msg->swallow) {
-            log_debug(LOG_INFO, "dyn: close s %d swallow req %"PRIu64" len %"PRIu32
+            log_debug(LOG_NOTICE, "dyn: close s %d swallow req %"PRIu64" len %"PRIu32
                     " type %d", conn->sd, msg->id, msg->mlen, msg->type);
             req_put(msg);
         } else {

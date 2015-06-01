@@ -34,6 +34,8 @@
 typedef void (*msg_parse_t)(struct msg *);
 typedef rstatus_t (*msg_post_splitcopy_t)(struct msg *);
 typedef void (*msg_coalesce_t)(struct msg *r);
+typedef rstatus_t (*msg_response_handler_t)(struct msg *req, struct msg *rsp);
+typedef uint64_t msgid_t;
 
 typedef enum msg_parse_result {
     MSG_PARSE_OK,                         /* parsing ok */
@@ -194,7 +196,7 @@ struct msg {
     TAILQ_ENTRY(msg)     s_tqe;           /* link in server q */
     TAILQ_ENTRY(msg)     m_tqe;           /* link in send q / free q */
 
-    uint64_t             id;              /* message id */
+    msgid_t              id;              /* message id */
     struct msg           *peer;           /* message peer */
     struct conn          *owner;          /* message owner - client | server */
     int64_t              stime_in_microsec;  /* start time in microsec */
@@ -210,7 +212,6 @@ struct msg {
 
     msg_parse_t          parser;          /* message parser */
     msg_parse_result_t   result;          /* message parsing result */
-    consistency_t        consistency;
 
     mbuf_copy_t          pre_splitcopy;   /* message pre-split copy */
     msg_post_splitcopy_t post_splitcopy;  /* message post-split copy */
@@ -261,10 +262,20 @@ struct msg {
                                           */
     unsigned             is_read:1;       /*  0 : write
                                               1 : read */
+    uint8_t              pending_responses;
+    msg_response_handler_t rsp_handler;
+    consistency_t        consistency;
+    msgid_t              parent_id;       /* parent message id */
 
 };
 
 TAILQ_HEAD(msg_tqh, msg);
+
+static inline rstatus_t
+msg_handle_response(struct msg *req, struct msg *rsp)
+{
+    return req->rsp_handler(req, rsp);
+}
 
 uint32_t msg_free_queue_size(void);
 
@@ -311,7 +322,6 @@ void rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg);
 
 /* for dynomite  */
 struct msg *dnode_req_get(struct conn *conn);
-void dnode_req_put(struct msg *msg);
 bool dnode_req_done(struct conn *conn, struct msg *msg);
 bool dnode_req_error(struct conn *conn, struct msg *msg);
 void dnode_req_peer_enqueue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg);

@@ -96,56 +96,64 @@ dnode_rsp_forward_stats(struct context *ctx, struct server *server, struct msg *
  * msg      : msg with data from the peer connection after parsing
  */
 static void
-dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *msg)
+dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
 {
     rstatus_t status;
-    struct msg *pmsg;
+    struct msg *req;
     struct conn *c_conn;
 
-    log_debug(LOG_VERB, "dnode_rsp_forward entering ...");
     ASSERT(!peer_conn->dnode_client && !peer_conn->dnode_server);
 
     /* response from a peer implies that peer is ok and heartbeating */
     dnode_peer_ok(ctx, peer_conn);
 
     /* dequeue peer message (request) from peer conn */
-    pmsg = TAILQ_FIRST(&peer_conn->omsg_q);
-    ASSERT(pmsg != NULL && pmsg->peer == NULL);
-    ASSERT(pmsg->request && !pmsg->done);
+    req = TAILQ_FIRST(&peer_conn->omsg_q);
+    log_debug(LOG_VERB, "dnode_rsp_forward entering req %p rsp %p...", req, rsp);
+    c_conn = req->owner;
 
-    if (log_loggable(LOG_VVERB)) {
+    ASSERT(req != NULL && req->peer == NULL);
+    ASSERT(req->request && !req->done);
+
+    if (log_loggable(LOG_NOTICE)) {
        loga("Dumping content for msg:   ");
-       msg_dump(msg);
+       msg_dump(rsp);
 
-       loga("msg id %d", msg->id);
+       loga("msg id %d", rsp->id);
 
        loga("Dumping content for pmsg :");
-       msg_dump(pmsg);
+       msg_dump(req);
 
-       loga("pmsg id %d", pmsg->id);
+       loga("pmsg id %d", req->id);
     }
 
-    peer_conn->dequeue_outq(ctx, peer_conn, pmsg);
-    pmsg->done = 1;
+    peer_conn->dequeue_outq(ctx, peer_conn, req);
+    req->done = 1;
 
-    /* establish msg <-> pmsg (response <-> request) link */
-    pmsg->peer = msg;
-    msg->peer = pmsg;
+    log_debug(LOG_NOTICE, "%p <-> %p", req, rsp);
+    /* establish rsp <-> req (response <-> request) link */
+    req->peer = rsp;
+    rsp->peer = req;
 
-    msg->pre_coalesce(msg);
+    rsp->pre_coalesce(rsp);
 
-
-    c_conn = pmsg->owner;
     ASSERT((c_conn->client && !c_conn->proxy) || (c_conn->dnode_client && !c_conn->dnode_server));
 
+    dnode_rsp_forward_stats(ctx, peer_conn->owner, rsp);
     if (TAILQ_FIRST(&c_conn->omsg_q) != NULL && dnode_req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
-        status = event_add_out(ctx->evb, c_conn);
-        if (status != DN_OK) {
-            c_conn->err = errno;
+        log_debug(LOG_NOTICE, "handle rsp %d:%d for conn %p", rsp->id, rsp->parent_id, c_conn);
+        // c_conn owns respnse now
+        rstatus_t status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
+                                                req->id : req->parent_id, rsp);
+        if (status == DN_OK)  {
+            //req_put(req);
+            status = event_add_out(ctx->evb, c_conn);
+            if (status != DN_OK) {
+                c_conn->err = errno;
+            }
         }
     }
 
-    dnode_rsp_forward_stats(ctx, peer_conn->owner, msg);
 }
 
 
@@ -247,7 +255,6 @@ dnode_rsp_recv_done(struct context *ctx, struct conn *conn,
     if (dnode_rsp_filter(ctx, conn, msg)) {
         return;
     }
-
     dnode_rsp_forward(ctx, conn, msg);
 }
 
@@ -258,12 +265,10 @@ dnode_rsp_send_next(struct context *ctx, struct conn *conn)
 {
     rstatus_t status;
 
-    if (log_loggable(LOG_VVERB)) {
-        log_debug(LOG_VVERB, "dnode_rsp_send_next entering");
-    }
 
     ASSERT(conn->dnode_client && !conn->dnode_server);
     struct msg *msg = rsp_send_next(ctx, conn);
+    log_debug(LOG_NOTICE, "dnode_rsp_send_next entering %p", msg);
 
     if (msg != NULL && conn->dyn_mode) {
         struct msg *pmsg = TAILQ_FIRST(&conn->omsg_q); //peer request's msg
