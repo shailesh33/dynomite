@@ -772,7 +772,7 @@ req_recv_done(struct context *ctx, struct conn *conn,
     }
 
     // add the message to the dict
-    log_debug(LOG_NOTICE, "conn %p adding message %d:%d", conn, msg->id, msg->parent_id);
+    log_notice("conn %p adding message %d:%d", conn, msg->id, msg->parent_id);
     dictAdd(conn->outstanding_msgs_dict, &msg->id, msg);
     req_forward(ctx, conn, msg);
 }
@@ -869,15 +869,25 @@ rstatus_t
 msg_write_all_rsp_handler(struct msg *req, struct msg *rsp)
 {
     // we own the response. We will free it when done.
-    return DN_OK;
-    rsp_put(rsp);
+    // the first guy wins. Others are put to rest
+    if (req->peer) {
+        log_notice("putting response %d:%d for request %d:%d",
+                   rsp->id, rsp->parent_id, req->id, req->parent_id);
+        rsp_put(rsp);
+    } else {
+        req->peer = rsp; 
+        rsp->peer = req; 
+        log_notice("accept response %d:%d for request %d:%d",
+                   rsp->id, rsp->parent_id, req->id, req->parent_id);
+    }
+
     if(--req->pending_responses) {
-        log_debug(LOG_NOTICE, "msg %d:%d received response %d:%d need %d more",
-                  req->id, req->parent_id, rsp->id, rsp->parent_id,
-                  req->pending_responses);
+        log_notice("msg %d:%d received response %d:%d need %d more",
+                   req->id, req->parent_id, rsp->id, rsp->parent_id,
+                   req->pending_responses);
         return DN_EAGAIN;
     }
-    log_debug(LOG_NOTICE, "msg %d received all responses", req->id);
+    log_notice("msg %d received all responses", req->id);
     return DN_OK;
 }
 

@@ -163,6 +163,12 @@ ssize_t _dn_recvn(int sd, void *vptr, size_t n);
  * DN_ASSERT_PANIC or DN_ASSERT_LOG was defined at the moment
  * ASSERT was called.
  */
+#define SH_ASSERT(_x) do {                         \
+    if (!(_x)) {                                \
+        dn_assert(#_x, __FILE__, __LINE__, 1);  \
+    }                                           \
+} while (0)
+
 //#define DN_ASSERT_PANIC 1
 #ifdef DN_ASSERT_PANIC
 

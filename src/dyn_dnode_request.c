@@ -295,7 +295,7 @@ dnode_req_recv_done(struct context *ctx, struct conn *conn,
         return;
     }
 
-    log_debug(LOG_NOTICE, "received msg: %p", msg);
+    log_debug(LOG_NOTICE, "received msg: %d:%d", msg->id, msg->parent_id);
     dnode_req_forward(ctx, conn, msg);
 }
 

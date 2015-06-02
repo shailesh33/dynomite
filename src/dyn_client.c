@@ -27,20 +27,26 @@
 static rstatus_t client_handle_response(struct conn *conn, msgid_t msg,
                                         struct msg *rsp);
 
-unsigned int
-dict_msg_id_hash(const void *msg_id)
+static unsigned int
+dict_msg_id_hash(const void *key)
 {
-    unsigned int ret = (unsigned int) *(uint64_t*)msg_id;
-    log_debug(LOG_NOTICE, "returning hash key %d", ret);
-    return ret;
-    //return dictGenHashFunction(msg_id, sizeof(*msg_id));
+    msgid_t id = *(msgid_t*)key;
+    return dictGenHashFunction(key, sizeof(id));
+}
+
+static int
+dict_msg_id_cmp(void *privdata, const void *key1, const void *key2)
+{
+    msgid_t id1 = *(msgid_t*)key1;
+    msgid_t id2 = *(msgid_t*)key2;
+    return id1 == id2;
 }
 
 dictType msg_table_dict_type = {
 	dict_msg_id_hash,            /* hash function */
     NULL,                        /* key dup */
     NULL,                        /* val dup */
-    NULL,                        /* key compare */
+    dict_msg_id_cmp,             /* key compare */
     NULL,                        /* key destructor */
     NULL                         /* val destructor */
 };
@@ -221,19 +227,25 @@ client_close(struct context *ctx, struct conn *conn)
     conn_put(conn);
 }
 
+// A response handler first deletes the link between the response and the
+// request. This request can be a request clone at the dnode_server connection.
 rstatus_t
 client_handle_response(struct conn *conn, msgid_t reqid, struct msg *rsp)
 {
-    // lookup for the message in the hash table
-    // call the response handler on that message
-    //return DN_OK;
-    ASSERT(conn->type == CONN_CLIENT);
+    // First lets delink the response and message that earlier code did
+    if (rsp->peer) {
+        rsp->peer->peer = NULL;
+    }
+    rsp->peer = NULL;
+    // now the handler owns the response. the caller owns the request
+    SH_ASSERT(conn->type == CONN_CLIENT);
+    // Fetch the original request
     struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
     if (!req) {
-        log_debug(LOG_NOTICE, "conn %p no message with id %d", conn, reqid);
-        req = TAILQ_FIRST(&conn->omsg_q);
+        log_notice("looks like we already cleanedup the request for %d", reqid);
+        rsp_put(rsp);
+        return DN_OK;
     }
-    ASSERT(req);
     return msg_handle_response(req, rsp);
 }
 

@@ -153,7 +153,7 @@ rsp_recv_next(struct context *ctx, struct conn *conn, bool alloc)
 }
 
 static bool
-rsp_filter(struct context *ctx, struct conn *conn, struct msg *msg)
+server_rsp_filter(struct context *ctx, struct conn *conn, struct msg *msg)
 {
     struct msg *pmsg;
 
@@ -202,7 +202,8 @@ rsp_filter(struct context *ctx, struct conn *conn, struct msg *msg)
 }
 
 static void
-rsp_forward_stats(struct context *ctx, struct server *server, struct msg *msg)
+server_rsp_forward_stats(struct context *ctx, struct server *server,
+                         struct msg *msg)
 {
 	ASSERT(!msg->request);
 
@@ -216,7 +217,7 @@ rsp_forward_stats(struct context *ctx, struct server *server, struct msg *msg)
 }
 
 static void
-rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
+server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
 {
     rstatus_t status;
     struct msg *req;
@@ -236,7 +237,8 @@ rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
     req->done = 1;
 
     /* establish rsp <-> req (response <-> request) link */
-    log_debug(LOG_NOTICE, "%p <-> %p", req, rsp);
+    log_notice("%d:%d <-> %d:%d", req->id, req->parent_id,
+               rsp->id, rsp->parent_id);
     req->peer = rsp;
     rsp->peer = req;
 
@@ -246,17 +248,21 @@ rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
     
     ASSERT(c_conn->client && !c_conn->proxy);
 
-    rsp_forward_stats(ctx, s_conn->owner, rsp);
+    server_rsp_forward_stats(ctx, s_conn->owner, rsp);
     // this should really be the message's response handler be doing it
     if (req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
         // handler owns the response now
-        log_debug(LOG_NOTICE, "handle rsp %d:%d for conn %p", rsp->id, rsp->parent_id, c_conn);
+        log_notice("handle rsp %d:%d for conn %p", rsp->id,
+                   rsp->parent_id, c_conn);
         rstatus_t status = DN_OK;
-        if (c_conn->type == CONN_CLIENT)
+        //if (c_conn->type == CONN_CLIENT)
             status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
                                           req->id : req->parent_id, rsp);
-        if (status == DN_OK) {
-            //req_put(req);
+        if (status == DN_OK || status == DN_ENO_IMPL) {
+            /*if (req->swallow) {// This is never the case for server side
+                log_notice("SWALLLOW IS ON");
+                req_put(req);// this will also put the rsp
+            }*/
             status = event_add_out(ctx->evb, c_conn);
             if (status != DN_OK) {
                 c_conn->err = errno;
@@ -266,8 +272,8 @@ rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
 }
 
 void
-rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg,
-              struct msg *nmsg)
+server_rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg,
+                     struct msg *nmsg)
 {
     ASSERT(!conn->client && !conn->proxy);
     ASSERT(msg != NULL && conn->rmsg == msg);
@@ -278,10 +284,10 @@ rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg,
     /* enqueue next message (response), if any */
     conn->rmsg = nmsg;
 
-    if (rsp_filter(ctx, conn, msg)) {
+    if (server_rsp_filter(ctx, conn, msg)) {
         return;
     }
-    rsp_forward(ctx, conn, msg);
+    server_rsp_forward(ctx, conn, msg);
 }
 
 struct msg *
@@ -294,7 +300,6 @@ rsp_send_next(struct context *ctx, struct conn *conn)
            (conn->dnode_client && !conn->dnode_server));
 
     pmsg = TAILQ_FIRST(&conn->omsg_q);
-    log_debug(LOG_NOTICE, "%p", pmsg);
     if (pmsg == NULL || !req_done(conn, pmsg)) {
         /* nothing is outstanding, initiate close? */
         if (pmsg == NULL && conn->eof) {

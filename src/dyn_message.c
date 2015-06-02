@@ -124,7 +124,7 @@ static struct rbnode tmo_rbs;    /* timeout rbtree sentinel */
 static inline rstatus_t
 msg_cant_handle_response(struct msg *req, struct msg *rsp)
 {
-    return DN_OK;
+    return DN_ENO_IMPL;
 }
 
 static struct msg *

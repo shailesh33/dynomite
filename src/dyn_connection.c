@@ -116,7 +116,7 @@ conn_to_ctx(struct conn *conn)
 static rstatus_t
 conn_cant_handle_response(struct conn *conn, msgid_t reqid, struct msg *resp)
 {
-    return DN_OK;
+    return DN_ENO_IMPL;
 }
 
 static struct conn *
@@ -370,7 +370,7 @@ conn_get(void *owner, bool client, bool redis)
         conn->type = CONN_SERVER;
         conn->recv = msg_recv;
         conn->recv_next = rsp_recv_next;
-        conn->recv_done = rsp_recv_done;
+        conn->recv_done = server_rsp_recv_done;
 
         conn->send = msg_send;
         conn->send_next = req_send_next;

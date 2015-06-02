@@ -926,7 +926,7 @@ static int _dictKeyIndex(dict *d, const void *key)
         return -1;
     /* Compute the key hash value */
     h = dictHashKey(d, key);
-    log_debug(LOG_NOTICE, "adding key %d", h);
+    log_notice("adding key %u", h);
     for (table = 0; table <= 1; table++) {
         idx = h & d->ht[table].sizemask;
         /* Search if this slot does not already contain the given key */

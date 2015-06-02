@@ -315,7 +315,7 @@ void req_send_done(struct context *ctx, struct conn *conn, struct msg *msg);
 struct msg *rsp_get(struct conn *conn);
 void rsp_put(struct msg *msg);
 struct msg *rsp_recv_next(struct context *ctx, struct conn *conn, bool alloc);
-void rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg, struct msg *nmsg);
+void server_rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg, struct msg *nmsg);
 struct msg *rsp_send_next(struct context *ctx, struct conn *conn);
 void rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg);
 
