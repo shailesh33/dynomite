@@ -149,7 +149,7 @@ dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
     ASSERT((c_conn->client && !c_conn->proxy) || (c_conn->dnode_client && !c_conn->dnode_server));
 
     dnode_rsp_forward_stats(ctx, peer_conn->owner, rsp);
-    if (TAILQ_FIRST(&c_conn->omsg_q) != NULL && dnode_req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
+    if (TAILQ_FIRST(&c_conn->omsg_q) != NULL && dnode_req_done(peer_conn, req)) {
         log_debug(LOG_NOTICE, "handle rsp %d:%d for conn %p", rsp->id, rsp->parent_id, c_conn);
         // c_conn owns respnse now
         SH_ASSERT(c_conn->type == CONN_CLIENT);

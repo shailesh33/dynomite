@@ -25,6 +25,7 @@
 #include "dyn_dnode_peer.h"
 
 static rstatus_t msg_write_all_rsp_handler(struct msg *req, struct msg *rsp);
+static rstatus_t msg_read_all_rsp_handler(struct msg *req, struct msg *rsp);
 
 struct msg *
 req_get(struct conn *conn)
@@ -746,6 +747,8 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
             }
         }
     } else { //for read only requests
+        msg->pending_responses = 1;
+        msg->rsp_handler = msg_read_all_rsp_handler;
         struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
         remote_req_forward(ctx, c_conn, msg, rack, key, keylen);
     }
@@ -862,7 +865,7 @@ req_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
 rstatus_t
 msg_read_all_rsp_handler(struct msg *req, struct msg *rsp)
 {
-    return DN_ENO_IMPL;
+    return msg_write_all_rsp_handler(req, rsp);
 }
 
 rstatus_t
