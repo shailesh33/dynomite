@@ -189,9 +189,11 @@ typedef enum dyn_error {
  */
 typedef enum consistency {
     LOCAL_ONE = 0,
-    LOCAL_QUORUM = 1,
-    GLOBAL_QUORUM = 2
+    LOCAL_QUORUM = 1
 } consistency_t;
+
+extern consistency_t g_write_consistency;
+extern consistency_t g_read_consistency;
 
 struct msg {
     TAILQ_ENTRY(msg)     c_tqe;           /* link in client q */
