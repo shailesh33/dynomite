@@ -301,6 +301,7 @@ done:
     msg->msg_type = 0;
     msg->dyn_error = 0;
     msg->rsp_handler = msg_cant_handle_response;
+    msg->consistency = LOCAL_ONE;
     return msg;
 }
 
@@ -397,6 +398,7 @@ msg_clone(struct msg *src, struct mbuf *mbuf_start, struct msg *target)
     target->pos = src->pos;
     target->vlen = src->vlen;
     target->is_read = src->is_read;
+    target->consistency = src->consistency;
 
     struct mbuf *mbuf, *nbuf;
     bool started = false;

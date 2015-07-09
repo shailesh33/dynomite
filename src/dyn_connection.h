@@ -122,7 +122,8 @@ struct conn {
     uint32_t           attempted_reconnect;   /* #attempted reconnect before calling close */
     uint32_t           non_bytes_recv;        /* #times or epoll triggers we receive no bytes */
     //uint32_t           non_bytes_send;        /* #times or epoll triggers that we are not able to send any bytes */
-    consistency_t      consistency;
+    consistency_t      read_consistency;
+    consistency_t      write_consistency;
     dict               *outstanding_msgs_dict;
     connection_type_t  type;
     conn_response_handler rsp_handler;

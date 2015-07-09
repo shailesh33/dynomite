@@ -116,7 +116,7 @@ dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
     /* We do this to keep the behaviour consistent with the previous
        version of the code*/
     /* if client consistency is local_one just wait for the local node to commit */
-    if ((conn_get_consistency(c_conn) == LOCAL_ONE) && req->swallow) {
+    if ((req->consistency == LOCAL_ONE) && req->swallow) {
         dnode_rsp_swallow(ctx, peer_conn, req, rsp);
         return;
     }

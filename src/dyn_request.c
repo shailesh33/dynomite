@@ -671,6 +671,12 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
         }
     }
 
+    if (msg->is_read) {
+        msg->consistency = conn_get_read_consistency(c_conn);
+    } else {
+        msg->consistency = conn_get_write_consistency(c_conn);
+    }
+
     if (request_send_to_all_racks(msg)) {
         msg->rsp_handler = msg_write_all_rsp_handler;
         uint32_t dc_cnt = array_n(&pool->datacenters);
@@ -687,9 +693,9 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                 //            dc->name->len, dc->name->data);
                 uint32_t rack_cnt = array_n(&dc->racks);
                 uint32_t rack_index;
+                msg->pending_responses = msg->consistency == LOCAL_ONE ? 1 : rack_cnt;
                 log_debug(LOG_NOTICE, "same DC racks:%d expect replies %d",
-                          rack_cnt, rack_cnt/2 + 1);
-                msg->pending_responses = rack_cnt;
+                          rack_cnt, msg->pending_responses);
                 for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
                     struct rack *rack = array_get(&dc->racks, rack_index);
                     //log_debug(LOG_DEBUG, "rack name '%.*s'",

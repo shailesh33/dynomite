@@ -189,7 +189,8 @@ _conn_get(void)
     conn->attempted_reconnect = 0;
     conn->non_bytes_recv = 0;
     //conn->non_bytes_send = 0;
-    conn->consistency = LOCAL_ONE;
+    conn->read_consistency = LOCAL_ONE;
+    conn->write_consistency = LOCAL_ONE;
     conn->type = CONN_UNSPECIFIED;
     conn->rsp_handler = conn_cant_handle_response; // default rsp handler
 
@@ -200,15 +201,27 @@ _conn_get(void)
 }
 
 inline void
-conn_set_consistency(struct conn *conn, consistency_t cons)
+conn_set_read_consistency(struct conn *conn, consistency_t cons)
 {
-    conn->consistency = cons;
+    conn->read_consistency = cons;
 }
 
 inline consistency_t
-conn_get_consistency(struct conn *conn)
+conn_get_read_consistency(struct conn *conn)
 {
-    return conn->consistency;
+    return conn->read_consistency;
+}
+
+inline void
+conn_set_write_consistency(struct conn *conn, consistency_t cons)
+{
+    conn->write_consistency = cons;
+}
+
+inline consistency_t
+conn_get_write_consistency(struct conn *conn)
+{
+    return conn->write_consistency;
 }
 
 void

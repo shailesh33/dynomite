@@ -74,7 +74,8 @@ client_ref(struct conn *conn, void *owner)
 
     /* owner of the client connection is the server pool */
     conn->owner = owner;
-    conn_set_consistency(conn, LOCAL_QUORUM);
+    conn_set_read_consistency(conn, LOCAL_ONE);
+    conn_set_write_consistency(conn, LOCAL_ONE);
     conn->outstanding_msgs_dict = dictCreate(&msg_table_dict_type, NULL);
     conn->type = CONN_CLIENT;
     conn->rsp_handler = client_handle_response;
