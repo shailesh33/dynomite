@@ -107,6 +107,7 @@ redis_arg1(struct msg *r)
     case MSG_REQ_REDIS_ZREVRANK:
     case MSG_REQ_REDIS_ZSCORE:
     case MSG_REQ_REDIS_SLAVEOF:
+    case MSG_REQ_DYNO_CONSISTENCY:
         return true;
 
     default:
@@ -1021,6 +1022,12 @@ redis_parse_req(struct msg *r)
                 if (str15icmp(m, 'z', 'r', 'e', 'm', 'r', 'a', 'n', 'g', 'e', 'b', 'y', 'r', 'a', 'n', 'k')) {
                     r->type = MSG_REQ_REDIS_ZREMRANGEBYRANK;
                     r->is_read = 0;
+                    break;
+                }
+
+                if (str15icmp(m, 's', 'e', 't', '_', 'c', 'o', 'n', 's', 'i', 's', 't', 'e', 'n', 'c', 'y')) {
+                    r->type = MSG_REQ_DYNO_CONSISTENCY;
+                    r->is_read = 1;
                     break;
                 }
 

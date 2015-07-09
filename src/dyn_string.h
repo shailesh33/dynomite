@@ -96,6 +96,9 @@ int string_compare(const struct string *s1, const struct string *s2);
 #define dn_vscnprintf(_s, _n, _f, _a)   \
     _vscnprintf((char *)(_s), (size_t)(_n), _f, _a)
 
+#define dn_strncasecmp(_s1, _s2, _n)        \
+    strncasecmp((char *)(_s1), (char *)(_s2), (size_t)(_n))
+
 static inline uint8_t *
 _dn_strchr(uint8_t *p, uint8_t *last, uint8_t c)
 {

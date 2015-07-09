@@ -554,6 +554,21 @@ request_send_to_all_racks(struct msg *msg) {
     return msg->is_read? 0 : 1;
 }
 
+static void
+send_rsp_integer(struct context *ctx, struct conn *c_conn, struct msg *msg)
+{
+    //do nothing
+    struct msg *nmsg = msg_get_rsp_integer(true);
+    if (!msg->noreply)
+        c_conn->enqueue_outq(ctx, c_conn, msg);
+    msg->peer = nmsg;
+    nmsg->peer = msg;
+
+    msg->done = 1;
+    //msg->pre_coalesce(msg);
+    rstatus_t status = event_add_out(ctx->evb, c_conn);
+    IGNORE_RET_VAL(status);
+}
 
 static void
 admin_local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
@@ -572,19 +587,9 @@ admin_local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *ms
     }
 
     struct server *peer = p_conn->owner;
-    struct msg *nmsg;
 
     if (peer->is_local) {
-        //do nothing
-        nmsg = msg_get_rsp_integer(true);
-        c_conn->enqueue_outq(ctx, c_conn, msg);
-        msg->peer = nmsg;
-        nmsg->peer = msg;
-
-        msg->done = 1;
-        //msg->pre_coalesce(msg);
-        status = event_add_out(ctx->evb, c_conn);
-        IGNORE_RET_VAL(status);
+        send_rsp_integer(ctx, c_conn, msg);
     } else {
         log_debug(LOG_NOTICE, "Need to delete [%.*s] ", keylen, key);
         local_req_forward(ctx, c_conn, msg, key, keylen);
@@ -621,6 +626,54 @@ remote_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
     }
 }
 
+static void
+req_set_read_consistency(struct context *ctx, struct conn *c_conn, struct msg *msg)
+{
+    // TODO: parse the value and set the consistency appropriately
+    // TODO: FOR NOW JUST TOGGLE THE CONSISTENCY
+    if (conn_get_read_consistency(c_conn) == LOCAL_ONE)
+        conn_set_read_consistency(c_conn, LOCAL_QUORUM);
+    else
+        conn_set_read_consistency(c_conn, LOCAL_ONE);
+
+    send_rsp_integer(ctx, c_conn, msg);
+    
+    return;
+}
+
+static void
+req_set_write_consistency(struct context *ctx, struct conn *c_conn, struct msg *msg)
+{
+    // TODO: parse the value and set the consistency appropriately
+    // TODO: FOR NOW JUST TOGGLE THE CONSISTENCY
+    if (conn_get_write_consistency(c_conn) == LOCAL_ONE)
+        conn_set_write_consistency(c_conn, LOCAL_QUORUM);
+    else
+        conn_set_write_consistency(c_conn, LOCAL_ONE);
+
+    send_rsp_integer(ctx, c_conn, msg);
+    return;
+}
+
+static void
+req_set_dyno_consistency(struct context *ctx, struct conn *c_conn, struct msg *msg)
+{
+    uint32_t keylen = (uint32_t)(msg->key_end - msg->key_start);
+    if ((keylen == 4) && !dn_strncasecmp(msg->key_start, "read", 4)) {
+        req_set_read_consistency(ctx, c_conn, msg);
+        return;
+    } else if ((keylen == 5) && !dn_strncasecmp(msg->key_start, "write", 5)) {
+        req_set_write_consistency(ctx, c_conn, msg);
+        return;
+    } else {
+        errno = EINVAL;
+        if (!msg->noreply)
+            c_conn->enqueue_outq(ctx, c_conn, msg);
+        req_forward_error(ctx, c_conn, msg);
+        return;
+    }
+
+}
 
 static void
 req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
@@ -638,6 +691,10 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
 
     key = NULL;
     keylen = 0;
+    if (msg->type == MSG_REQ_DYNO_CONSISTENCY) {
+        req_set_dyno_consistency(ctx, c_conn, msg);
+        return;
+    }
 
     if (!string_empty(&pool->hash_tag)) {
         struct string *tag = &pool->hash_tag;

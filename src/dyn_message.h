@@ -172,6 +172,7 @@ typedef enum msg_type {
     MSG_RSP_REDIS_INTEGER,
     MSG_RSP_REDIS_BULK,
     MSG_RSP_REDIS_MULTIBULK,
+    MSG_REQ_DYNO_CONSISTENCY,
     MSG_SENTINEL
 } msg_type_t;
 
@@ -188,7 +189,8 @@ typedef enum dyn_error {
  */
 typedef enum consistency {
     LOCAL_ONE = 0,
-    LOCAL_QUORUM = 1
+    LOCAL_QUORUM = 1,
+    GLOBAL_QUORUM = 2
 } consistency_t;
 
 struct msg {
