@@ -247,6 +247,14 @@ client_handle_response(struct conn *conn, msgid_t reqid, struct msg *rsp)
         rsp_put(rsp);
         return DN_OK;
     }
-    return msg_handle_response(req, rsp);
+    rstatus_t status = msg_handle_response(req, rsp);
+    if (status == DN_OK) {
+        struct context *ctx = conn_to_ctx(conn);
+        status = event_add_out(ctx->evb, conn);
+        if (status != DN_OK) {
+            conn->err = errno;
+        }
+    }
+    return status;
 }
 

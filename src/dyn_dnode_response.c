@@ -158,14 +158,7 @@ dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
             log_notice("swallow request %d:%d", req->id, req->parent_id);
             req_put(req);
         }
-        if (status == DN_ENO_IMPL || status == DN_OK) {
-            status = event_add_out(ctx->evb, c_conn);
-            if (status != DN_OK) {
-                c_conn->err = errno;
-            }
-        }
     }
-
 }
 
 

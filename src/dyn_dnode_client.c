@@ -7,6 +7,8 @@
 #include "dyn_server.h"
 #include "dyn_dnode_client.h"
 
+static rstatus_t dnode_client_handle_response(struct conn *conn, msgid_t msg,
+                                              struct msg *rsp);
 
 void
 dnode_client_ref(struct conn *conn, void *owner)
@@ -30,6 +32,7 @@ dnode_client_ref(struct conn *conn, void *owner)
 
     /* owner of the client connection is the server pool */
     conn->owner = owner;
+    conn->rsp_handler = dnode_client_handle_response;
 
     log_debug(LOG_VVERB, "dyn: ref conn %p owner %p into pool '%.*s'", conn, pool,
               pool->name.len, pool->name.data);
@@ -183,4 +186,20 @@ dnode_client_close(struct context *ctx, struct conn *conn)
     conn->sd = -1;
 
     conn_put(conn);
+}
+
+static rstatus_t
+dnode_client_handle_response(struct conn *conn, msgid_t msg, struct msg *rsp)
+{
+    // right now we dont care about global quorum so even if this dnode client
+    // received a message from a remote DC the caller doesnt care about response...??
+    // is that so?
+    // TODO: Nevertheless make sure we do it right here, refer to dyn_client.c
+    rstatus_t status = DN_OK;
+    struct context *ctx = conn_to_ctx(conn);
+    status = event_add_out(ctx->evb, conn);
+    if (status != DN_OK) {
+        conn->err = errno;
+    }
+    return status;
 }

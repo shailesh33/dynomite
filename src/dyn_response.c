@@ -255,15 +255,8 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
         log_notice("handle rsp %d:%d for conn %p", rsp->id,
                    rsp->parent_id, c_conn);
         rstatus_t status = DN_OK;
-        //if (c_conn->type == CONN_CLIENT)
-            status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
-                                          req->id : req->parent_id, rsp);
-        if (status == DN_OK || status == DN_ENO_IMPL) {
-            status = event_add_out(ctx->evb, c_conn);
-            if (status != DN_OK) {
-                c_conn->err = errno;
-            }
-        }
+        status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
+                                      req->id : req->parent_id, rsp);
      }
 }
 
