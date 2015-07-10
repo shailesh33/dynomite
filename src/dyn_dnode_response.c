@@ -83,7 +83,7 @@ dnode_rsp_swallow(struct context *ctx, struct conn *peer_conn,
 {
     peer_conn->dequeue_outq(ctx, peer_conn, req);
     req->done = 1;
-    log_debug(LOG_NOTICE, "conn %p swallow %p", peer_conn, req);
+    log_debug(LOG_VERB, "conn %p swallow %p", peer_conn, req);
     log_debug(LOG_INFO, "dyn: swallow rsp %"PRIu64" len %"PRIu32" of req "
             "%"PRIu64" on s %d", rsp->id, rsp->mlen, req->id,
             peer_conn->sd);
@@ -139,7 +139,7 @@ dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
     peer_conn->dequeue_outq(ctx, peer_conn, req);
     req->done = 1;
 
-    log_debug(LOG_NOTICE, "%p <-> %p", req, rsp);
+    log_debug(LOG_VERB, "%p <-> %p", req, rsp);
     /* establish rsp <-> req (response <-> request) link */
     req->peer = rsp;
     rsp->peer = req;
@@ -343,7 +343,7 @@ dnode_rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
     ASSERT(conn->dnode_client && !conn->dnode_server);
     ASSERT(conn->smsg == NULL);
 
-    log_debug(LOG_NOTICE, "dyn: send done rsp %"PRIu64" on c %d", msg->id, conn->sd);
+    log_debug(LOG_VERB, "dyn: send done rsp %"PRIu64" on c %d", msg->id, conn->sd);
 
     pmsg = msg->peer;
 

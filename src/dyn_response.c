@@ -237,7 +237,7 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
     req->done = 1;
 
     /* establish rsp <-> req (response <-> request) link */
-    log_notice("%d:%d <-> %d:%d", req->id, req->parent_id,
+    log_debug(LOG_VERB, "%d:%d <-> %d:%d", req->id, req->parent_id,
                rsp->id, rsp->parent_id);
     req->peer = rsp;
     rsp->peer = req;
@@ -356,7 +356,7 @@ rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
        log_debug(LOG_VVERB, "send done rsp %"PRIu64" on c %d", msg->id, conn->sd);
     }
 
-    log_debug(LOG_NOTICE, "conn %p msg %p done", conn, msg);
+    log_debug(LOG_VERB, "conn %p msg %p done", conn, msg);
     pmsg = msg->peer;
 
     ASSERT(!msg->request && pmsg->request);

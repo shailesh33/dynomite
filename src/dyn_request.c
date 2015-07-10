@@ -254,7 +254,7 @@ req_server_enqueue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
     }
 
     TAILQ_INSERT_TAIL(&conn->imsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue inq %d:%d", conn, msg->id, msg->parent_id);
+    log_debug(LOG_VERB, "conn %p enqueue inq %d:%d", conn, msg->id, msg->parent_id);
 
     if (!conn->dyn_mode) {
        stats_server_incr(ctx, conn->owner, in_queue);
@@ -273,7 +273,7 @@ req_server_dequeue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
     ASSERT(!conn->client && !conn->proxy);
 
     TAILQ_REMOVE(&conn->imsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p dequeue inq %d:%d", conn, msg->id, msg->parent_id);
+    log_debug(LOG_VERB, "conn %p dequeue inq %d:%d", conn, msg->id, msg->parent_id);
 
     stats_server_decr(ctx, conn->owner, in_queue);
     stats_server_decr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
@@ -287,7 +287,7 @@ req_client_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg->stime_in_microsec = dn_usec_now();
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, c_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
+    log_debug(LOG_VERB, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
 }
 
 void
@@ -297,7 +297,7 @@ req_server_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     ASSERT(!conn->client && !conn->proxy);
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
+    log_debug(LOG_VERB, "conn %p enqueue outq %d:%d", conn, msg->id, msg->parent_id);
 
     stats_server_incr(ctx, conn->owner, out_queue);
     stats_server_incr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
@@ -312,7 +312,7 @@ req_client_dequeue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     uint64_t latency = dn_usec_now() - msg->stime_in_microsec;
     stats_histo_add_latency(ctx, latency);
     TAILQ_REMOVE(&conn->omsg_q, msg, c_tqe);
-    log_debug(LOG_NOTICE, "conn %p dequeue outq %p", conn, msg);
+    log_debug(LOG_VERB, "conn %p dequeue outq %p", conn, msg);
 }
 
 void
@@ -324,7 +324,7 @@ req_server_dequeue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg_tmo_delete(msg);
 
     TAILQ_REMOVE(&conn->omsg_q, msg, s_tqe);
-    log_debug(LOG_NOTICE, "conn %p dequeue outq %d:%d", conn, msg->id, msg->parent_id);
+    log_debug(LOG_VERB, "conn %p dequeue outq %d:%d", conn, msg->id, msg->parent_id);
 
     stats_server_decr(ctx, conn->owner, out_queue);
     stats_server_decr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
@@ -489,7 +489,7 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
     }
 
     s_conn = server_pool_conn(ctx, c_conn->owner, key, keylen);
-    log_debug(LOG_NOTICE, "c_conn %p got server conn %p", c_conn, s_conn);
+    log_debug(LOG_VERB, "c_conn %p got server conn %p", c_conn, s_conn);
     if (s_conn == NULL) {
         req_forward_error(ctx, c_conn, msg);
         return;
@@ -615,12 +615,12 @@ remote_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
     struct server *peer = p_conn->owner;
 
     if (peer->is_local) {
-        log_debug(LOG_NOTICE, "c_conn: %p forwarding %d:%d is local", c_conn,
+        log_debug(LOG_VERB, "c_conn: %p forwarding %d:%d is local", c_conn,
                   msg->id, msg->parent_id);
         local_req_forward(ctx, c_conn, msg, key, keylen);
         return;
     } else {
-        log_debug(LOG_NOTICE, "c_conn: %p forwarding %d:%d to p_conn %p", c_conn,
+        log_debug(LOG_VERB, "c_conn: %p forwarding %d:%d to p_conn %p", c_conn,
                   msg->id, msg->parent_id, p_conn);
         dnode_peer_req_forward(ctx, c_conn, p_conn, msg, rack, key, keylen);
     }
@@ -772,7 +772,7 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                         }
 
                         msg_clone(msg, orig_mbuf, rack_msg);
-                        log_debug(LOG_NOTICE, "msg (%d:%d) clone to rack msg (%d:%d)",
+                        log_debug(LOG_VERB, "msg (%d:%d) clone to rack msg (%d:%d)",
                                   msg->id, msg->parent_id, rack_msg->id, rack_msg->parent_id);
                         rack_msg->swallow = true;
                     }
@@ -781,7 +781,7 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                        log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
                                dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
                     }
-                    log_debug(LOG_NOTICE, "c_conn: %p forwarding (%d:%d)",
+                    log_debug(LOG_VERB, "c_conn: %p forwarding (%d:%d)",
                               c_conn, rack_msg->id, rack_msg->parent_id);
                     remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
                 }
@@ -839,7 +839,7 @@ req_recv_done(struct context *ctx, struct conn *conn,
     }
 
     // add the message to the dict
-    log_notice("conn %p adding message %d:%d", conn, msg->id, msg->parent_id);
+    log_debug(LOG_VERB, "conn %p adding message %d:%d", conn, msg->id, msg->parent_id);
     dictAdd(conn->outstanding_msgs_dict, &msg->id, msg);
     req_forward(ctx, conn, msg);
 }
