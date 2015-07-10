@@ -250,7 +250,7 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
 
     server_rsp_forward_stats(ctx, s_conn->owner, rsp);
     // this should really be the message's response handler be doing it
-    if (req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
+    if (req_done(s_conn, req)) {
         // handler owns the response now
         log_notice("handle rsp %d:%d for conn %p", rsp->id,
                    rsp->parent_id, c_conn);
@@ -259,10 +259,6 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
             status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
                                           req->id : req->parent_id, rsp);
         if (status == DN_OK || status == DN_ENO_IMPL) {
-            /*if (req->swallow) {// This is never the case for server side
-                log_notice("SWALLLOW IS ON");
-                req_put(req);// this will also put the rsp
-            }*/
             status = event_add_out(ctx->evb, c_conn);
             if (status != DN_OK) {
                 c_conn->err = errno;

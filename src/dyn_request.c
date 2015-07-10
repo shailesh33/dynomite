@@ -750,7 +750,8 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                 //            dc->name->len, dc->name->data);
                 uint32_t rack_cnt = array_n(&dc->racks);
                 uint32_t rack_index;
-                msg->pending_responses = msg->consistency == LOCAL_ONE ? 1 : rack_cnt;
+                msg->pending_responses = msg->consistency == LOCAL_ONE ? 1 :
+                                         (rack_cnt + 1)/2;
                 log_debug(LOG_NOTICE, "same DC racks:%d expect replies %d",
                           rack_cnt, msg->pending_responses);
                 for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
