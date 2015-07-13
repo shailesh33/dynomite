@@ -137,13 +137,6 @@ conn_handle_response(struct conn *conn, msgid_t msgid, struct msg *rsp)
 
 TAILQ_HEAD(conn_tqh, conn);
 
-void conn_add_in_queue_msg(struct conn *conn, struct msg *msg);
-void conn_remove_in_queue_msg(struct conn *conn, struct msg *msg);
-
-void conn_add_out_queue_msg(struct conn *conn, struct msg *msg);
-void conn_remove_out_queue_msg(struct conn *conn, struct msg *msg);
-
-
 struct context *conn_to_ctx(struct conn *conn);
 struct conn *test_conn_get(void);
 struct conn *conn_get(void *owner, bool client, bool redis);
