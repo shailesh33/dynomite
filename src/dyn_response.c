@@ -41,6 +41,8 @@ rsp_get(struct conn *conn)
 void
 rsp_put(struct msg *msg)
 {
+    if (!msg)
+        return;
     ASSERT(!msg->request);
     ASSERT(msg->peer == NULL);
     msg_put(msg);
@@ -252,8 +254,8 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
     // this should really be the message's response handler be doing it
     if (req_done(s_conn, req)) {
         // handler owns the response now
-        log_notice("handle rsp %d:%d for conn %p", rsp->id,
-                   rsp->parent_id, c_conn);
+        log_notice("handle rsp %d:%d for req %d:%d conn %p", rsp->id,
+                   rsp->parent_id, req->id, req->parent_id, c_conn);
         rstatus_t status = DN_OK;
         status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 
                                       req->id : req->parent_id, rsp);

@@ -24,8 +24,9 @@
 #include "dyn_server.h"
 #include "dyn_dnode_peer.h"
 
-static rstatus_t msg_write_all_rsp_handler(struct msg *req, struct msg *rsp);
-static rstatus_t msg_read_all_rsp_handler(struct msg *req, struct msg *rsp);
+static rstatus_t msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp);
+static rstatus_t msg_read_local_quorum_rsp_handler(struct msg *req, struct msg *rsp);
+static rstatus_t msg_read_one_rsp_handler(struct msg *req, struct msg *rsp);
 
 struct msg *
 req_get(struct conn *conn)
@@ -550,8 +551,13 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
 
 
 static bool
-request_send_to_all_racks(struct msg *msg) {
-    return msg->is_read? 0 : 1;
+request_send_to_all_racks(struct msg *msg)
+{
+    if (!msg->is_read)
+        return true;
+    if (msg->consistency == LOCAL_QUORUM)
+        return true;
+    return false;
 }
 
 static void
@@ -696,6 +702,10 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
         return;
     }
 
+    // add the message to the dict
+    log_debug(LOG_VERB, "conn %p adding message %d:%d", c_conn, msg->id, msg->parent_id);
+    dictAdd(c_conn->outstanding_msgs_dict, &msg->id, msg);
+
     if (!string_empty(&pool->hash_tag)) {
         struct string *tag = &pool->hash_tag;
         uint8_t *tag_start, *tag_end;
@@ -735,7 +745,8 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
     }
 
     if (request_send_to_all_racks(msg)) {
-        msg->rsp_handler = msg_write_all_rsp_handler;
+        msg->rsp_handler = msg->is_read ? msg_read_local_quorum_rsp_handler:
+                                          msg_write_local_quorum_rsp_handler;
         uint32_t dc_cnt = array_n(&pool->datacenters);
         uint32_t dc_index;
         for(dc_index = 0; dc_index < dc_cnt; dc_index++) {
@@ -811,8 +822,7 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
             }
         }
     } else { //for read only requests
-        msg->pending_responses = 1;
-        msg->rsp_handler = msg_read_all_rsp_handler;
+        msg->rsp_handler = msg_read_one_rsp_handler;
         struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
         remote_req_forward(ctx, c_conn, msg, rack, key, keylen);
     }
@@ -838,9 +848,6 @@ req_recv_done(struct context *ctx, struct conn *conn,
         return;
     }
 
-    // add the message to the dict
-    log_debug(LOG_VERB, "conn %p adding message %d:%d", conn, msg->id, msg->parent_id);
-    dictAdd(conn->outstanding_msgs_dict, &msg->id, msg);
     req_forward(ctx, conn, msg);
 }
 
@@ -927,13 +934,51 @@ req_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
 }
 
 rstatus_t
-msg_read_all_rsp_handler(struct msg *req, struct msg *rsp)
+msg_read_one_rsp_handler(struct msg *req, struct msg *rsp)
 {
-    return msg_write_all_rsp_handler(req, rsp);
+    if (req->peer)
+        log_warn("Received more than one response for local_one. req: %d:%d \
+                 prev rsp %d:%d new rsp %d:%d", req->id, req->parent_id,
+                 req->peer->id, req->peer->parent_id, rsp->id, rsp->parent_id);
+    req->peer = rsp;
+    rsp->peer = req;
+    return DN_OK;
 }
 
 rstatus_t
-msg_write_all_rsp_handler(struct msg *req, struct msg *rsp)
+msg_read_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
+{
+    int i;
+    for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
+        if (req->responses[i])
+            continue;
+        // empty slot.
+        req->responses[i] = rsp;
+        if(!--req->pending_responses)
+            break;
+        log_notice("Received a response %d:%d for req %d:%d need %d more",
+                   rsp->id, rsp->parent_id, req->id, req->parent_id,
+                   req->pending_responses);
+        return;
+    }
+    log_notice("Received all responses for req %d:%d", req->id, req->parent_id);
+    for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
+        if (!req->responses[i])
+            break;
+        log_notice("checksum for response %d is %u", i,
+                   msg_payload_crc32(req->responses[i]));
+    }
+    for (i = 1; i < MAX_REPLICAS_PER_DC; i++)
+        rsp_put(req->responses[i]);
+
+    req->peer = req->responses[0];
+    req->responses[0]->peer = req;
+
+    return DN_OK;
+}
+
+rstatus_t
+msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
 {
     // we own the response. We will free it when done.
     // the first guy wins. Others are put to rest
@@ -956,16 +1001,4 @@ msg_write_all_rsp_handler(struct msg *req, struct msg *rsp)
     }
     log_notice("msg %d received all responses", req->id);
     return DN_OK;
-}
-
-rstatus_t
-msg_read_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
-{
-    return DN_ENO_IMPL;
-}
-
-rstatus_t
-msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
-{
-    return DN_ENO_IMPL;
 }

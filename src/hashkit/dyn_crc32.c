@@ -135,3 +135,22 @@ hash_crc32a(const char *key, size_t key_length, struct dyn_token *token)
 
     return DN_OK;
 }
+
+// crc32 for sequential buffers.
+
+#define _CRC32_(crc, ch)     ((crc) = ((crc) >> 8) ^ crc32tab[((crc) ^ (ch)) &\
+                                                              0xff])
+uint32_t
+crc32_sz(const char *buf, int buf_length, uint32_t in_crc32)
+{
+    uint32_t crc = ~in_crc32;
+    char       *p;
+    int         len,
+                nr;
+
+    len = 0;
+    nr = buf_length;
+    for (len += nr, p = buf; nr--; ++p)
+        _CRC32_(crc, tolower((unsigned int) *p));
+    return ~crc;
+}

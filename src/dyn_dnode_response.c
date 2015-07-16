@@ -113,12 +113,24 @@ dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
     log_debug(LOG_VERB, "dnode_rsp_forward entering req %p rsp %p...", req, rsp);
     c_conn = req->owner;
 
-    /* We do this to keep the behaviour consistent with the previous
-       version of the code*/
-    /* if client consistency is local_one just wait for the local node to commit */
-    if ((req->consistency == LOCAL_ONE) && req->swallow) {
-        dnode_rsp_swallow(ctx, peer_conn, req, rsp);
-        return;
+    /* if client consistency is local_one forward the response from only the
+       local node. Since dyn_dnode_peer is always a remote node, drop the rsp */
+    if (req->consistency == LOCAL_ONE) {
+        if (req->swallow) {
+            dnode_rsp_swallow(ctx, peer_conn, req, rsp);
+            return;
+        }
+        log_warn("req %d:%d with LOCAL_ONE consistency is not being swallowed");
+    }
+
+    /* if client consistency is local_quorum, forward the response from only the
+       local region/DC. */
+    if ((req->consistency == LOCAL_QUORUM) && !peer_conn->same_dc) {
+        if (req->swallow) {
+            dnode_rsp_swallow(ctx, peer_conn, req, rsp);
+            return;
+        }
+        log_warn("req %d:%d with LOCAL_QUORUM consistency is not being swallowed");
     }
 
     ASSERT(req != NULL && req->peer == NULL);
@@ -150,7 +162,8 @@ dnode_rsp_forward(struct context *ctx, struct conn *peer_conn, struct msg *rsp)
 
     dnode_rsp_forward_stats(ctx, peer_conn->owner, rsp);
     if (TAILQ_FIRST(&c_conn->omsg_q) != NULL && dnode_req_done(peer_conn, req)) {
-        log_debug(LOG_NOTICE, "handle rsp %d:%d for conn %p", rsp->id, rsp->parent_id, c_conn);
+        log_notice("handle rsp %d:%d for req %d:%d conn %p",
+                   rsp->id, rsp->parent_id, req->id, req->parent_id, c_conn);
         // c_conn owns respnse now
         SH_ASSERT(c_conn->type == CONN_CLIENT);
         rstatus_t status = conn_handle_response(c_conn, req->parent_id, rsp);

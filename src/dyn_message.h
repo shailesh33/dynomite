@@ -30,6 +30,7 @@
 #define MAX_ALLOC_MSGS                400000
 
 #define MAX_ALLOWABLE_PROCESSED_MSGS  500
+#define MAX_REPLICAS_PER_DC           3
 
 typedef void (*msg_parse_t)(struct msg *);
 typedef rstatus_t (*msg_post_splitcopy_t)(struct msg *);
@@ -266,6 +267,9 @@ struct msg {
                                           */
     unsigned             is_read:1;       /*  0 : write
                                               1 : read */
+    struct msg           *responses[MAX_REPLICAS_PER_DC];
+                                          /* we could use the dynamic array
+                                             here. But we have only 3 ASGs */
     uint8_t              pending_responses;
     msg_response_handler_t rsp_handler;
     consistency_t        consistency;
