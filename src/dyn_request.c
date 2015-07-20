@@ -581,7 +581,6 @@ admin_local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *ms
                         struct rack *rack, uint8_t *key, uint32_t keylen)
 {
     struct conn *p_conn;
-    rstatus_t status;
 
     ASSERT(c_conn->client || c_conn->dnode_client);
 
@@ -759,10 +758,12 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
             if (string_compare(dc->name, &pool->dc) == 0) { //send to all local racks
                 //log_debug(LOG_DEBUG, "dc name  '%.*s'",
                 //            dc->name->len, dc->name->data);
-                uint32_t rack_cnt = array_n(&dc->racks);
-                uint32_t rack_index;
+                uint8_t rack_cnt = (uint8_t)array_n(&dc->racks);
+                uint8_t rack_index;
                 msg->pending_responses = msg->consistency == LOCAL_ONE ? 1 :
-                                         rack_cnt/2 + 1;
+                                         rack_cnt;
+                msg->quorum_responses = msg->consistency == LOCAL_ONE ? 1 :
+                                         (uint8_t)(rack_cnt/2 + 1);
                 log_debug(LOG_NOTICE, "same DC racks:%d expect replies %d",
                           rack_cnt, msg->pending_responses);
                 for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
@@ -801,7 +802,7 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                 if (rack_cnt == 0)
                     continue;
 
-                uint32_t ran_index = rand() % rack_cnt;
+                uint32_t ran_index = (uint32_t)rand() % rack_cnt;
                 struct rack *rack = array_get(&dc->racks, ran_index);
 
                 struct msg *rack_msg = msg_get(c_conn, msg->request, msg->redis);
@@ -933,7 +934,7 @@ req_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
 
 }
 
-rstatus_t
+static rstatus_t
 msg_read_one_rsp_handler(struct msg *req, struct msg *rsp)
 {
     if (req->peer)
@@ -945,39 +946,77 @@ msg_read_one_rsp_handler(struct msg *req, struct msg *rsp)
     return DN_OK;
 }
 
-rstatus_t
+
+static rstatus_t
 msg_read_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
 {
     int i;
+
     for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
         if (req->responses[i])
             continue;
         // empty slot.
         req->responses[i] = rsp;
-        if(!--req->pending_responses)
+        --req->pending_responses;
+        if (!req->quorum_responses || !--req->quorum_responses)
             break;
         log_notice("Received a response %d:%d for req %d:%d need %d more",
                    rsp->id, rsp->parent_id, req->id, req->parent_id,
                    req->pending_responses);
-        return;
+        return DN_EAGAIN;
     }
-    log_notice("Received all responses for req %d:%d", req->id, req->parent_id);
-    for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
-        if (!req->responses[i])
-            break;
-        log_notice("checksum for response %d is %u", i,
-                   msg_payload_crc32(req->responses[i]));
-    }
-    for (i = 1; i < MAX_REPLICAS_PER_DC; i++)
-        rsp_put(req->responses[i]);
+    int received_responses = i + 1;
+    log_notice("Received %d responses for req %d:%d", received_responses,
+               req->id, req->parent_id);
 
-    req->peer = req->responses[0];
-    req->responses[0]->peer = req;
+    /* I would have done a better job here but we are having only three replicas.
+     * Added a Static assert here just in case */
+    STATIC_ASSERT(MAX_REPLICAS_PER_DC == 3, "This code should change");
+    uint32_t chk0, chk1, chk2;
+    int selected_rsp_idx = -1;
+    chk0 = msg_payload_crc32(req->responses[0]);
+    chk1 = msg_payload_crc32(req->responses[1]);
+    if (chk0 == chk1) {
+        // return the response now;
+        selected_rsp_idx = 0;
+        goto rsp_selected;
+    } else {
+        if (req->pending_responses) {
+            log_notice("quorum responses receveid do not match. waiting for "\
+                       "pending responses for req %d:%d", req->id, req->parent_id);
+            return DN_EAGAIN;
+        }
+        // no pending responses we received 2 or 3 responses
+        selected_rsp_idx = 0;
+        if (received_responses > 2) {
+            // compare third guy
+            chk2 = msg_payload_crc32(req->responses[2]);
+            if (chk1 == chk2) {
+                selected_rsp_idx = 1;
+                goto rsp_selected;
+            } else if (chk0 == chk2) {
+                selected_rsp_idx = 0;
+                goto rsp_selected;
+            }
+        }
+        log_warn("none of the responses match for req %d:%d returning first",
+                 req->id, req->parent_id);
+        selected_rsp_idx = 0;
+        goto rsp_selected;
+    }
+
+rsp_selected:
+    for (i = 0; i < MAX_REPLICAS_PER_DC; i++)
+        if (i !=  selected_rsp_idx)
+            rsp_put(req->responses[i]);
+
+    req->peer = req->responses[selected_rsp_idx];
+    req->responses[selected_rsp_idx]->peer = req;
 
     return DN_OK;
 }
 
-rstatus_t
+static rstatus_t
 msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
 {
     // we own the response. We will free it when done.
@@ -993,10 +1032,10 @@ msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
                    rsp->id, rsp->parent_id, req->id, req->parent_id);
     }
 
-    if(--req->pending_responses) {
+    if(--req->quorum_responses) {
         log_notice("msg %d:%d received response %d:%d need %d more",
                    req->id, req->parent_id, rsp->id, rsp->parent_id,
-                   req->pending_responses);
+                   req->quorum_responses);
         return DN_EAGAIN;
     }
     log_notice("msg %d received all responses", req->id);

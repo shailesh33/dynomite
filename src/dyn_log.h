@@ -67,9 +67,6 @@ struct logger {
 #define log_notice(...)                                                     \
     log_debug(LOG_NOTICE, __VA_ARGS__);
 
-#define log_warn(...)                                                     \
-    log_debug(LOG_WARN, __VA_ARGS__);
-
 #define log_hexdump(_level, _data, _datalen, ...) do {                      \
     if (log_loggable(_level) != 0) {                                        \
         _log(__FUNCTION__, __LINE__, 0, __VA_ARGS__);                           \

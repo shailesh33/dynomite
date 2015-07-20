@@ -163,13 +163,23 @@ ssize_t _dn_recvn(int sd, void *vptr, size_t n);
  * DN_ASSERT_PANIC or DN_ASSERT_LOG was defined at the moment
  * ASSERT was called.
  */
-#define SH_ASSERT(_x) do {                         \
-    if (!(_x)) {                                \
-        dn_assert(#_x, __FILE__, __LINE__, 1);  \
-    }                                           \
-} while (0)
 
-//#define DN_ASSERT_PANIC 1
+// http://www.pixelbeat.org/programming/gcc/static_assert.html
+#define ASSERT_CONCAT_(a, b) a##b
+#define ASSERT_CONCAT(a, b) ASSERT_CONCAT_(a, b)
+#ifdef __COUNTER__
+  #define STATIC_ASSERT(e,m) \
+    ;enum { ASSERT_CONCAT(static_assert_, __COUNTER__) = 1/(!!(e)) }
+#else
+  /* This can't be used twice on the same line so ensure if using in headers
+   * that the headers are not included twice (by wrapping in #ifndef...#endif)
+   * Note it doesn't cause an issue when used on same line of separate modules
+   * compiled with gcc -combine -fwhole-program.  */
+  #define STATIC_ASSERT(e,m) \
+    ;enum { ASSERT_CONCAT(assert_line_, __LINE__) = 1/(!!(e)) }
+#endif
+
+#define DN_ASSERT_PANIC 1
 #ifdef DN_ASSERT_PANIC
 
 #define ASSERT(_x) do {                         \

@@ -137,6 +137,10 @@ conn_handle_response(struct conn *conn, msgid_t msgid, struct msg *rsp)
 
 TAILQ_HEAD(conn_tqh, conn);
 
+void conn_set_write_consistency(struct conn *conn, consistency_t cons);
+consistency_t conn_get_write_consistency(struct conn *conn);
+void conn_set_read_consistency(struct conn *conn, consistency_t cons);
+consistency_t conn_get_read_consistency(struct conn *conn);
 struct context *conn_to_ctx(struct conn *conn);
 struct conn *test_conn_get(void);
 struct conn *conn_get(void *owner, bool client, bool redis);

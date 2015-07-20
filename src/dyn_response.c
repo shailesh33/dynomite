@@ -248,11 +248,12 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
 
     c_conn = req->owner;
     
-    ASSERT(c_conn->client && !c_conn->proxy);
+    ASSERT((c_conn->type == CONN_CLIENT) ||
+           (c_conn->type == CONN_DNODE_PEER_CLIENT));
 
     server_rsp_forward_stats(ctx, s_conn->owner, rsp);
     // this should really be the message's response handler be doing it
-    if (req_done(s_conn, req)) {
+    if (req_done(c_conn, req)) {
         // handler owns the response now
         log_notice("handle rsp %d:%d for req %d:%d conn %p", rsp->id,
                    rsp->parent_id, req->id, req->parent_id, c_conn);

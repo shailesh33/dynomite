@@ -239,7 +239,7 @@ client_handle_response(struct conn *conn, msgid_t reqid, struct msg *rsp)
     }
     rsp->peer = NULL;
     // now the handler owns the response. the caller owns the request
-    SH_ASSERT(conn->type == CONN_CLIENT);
+    ASSERT(conn->type == CONN_CLIENT);
     // Fetch the original request
     struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
     if (!req) {

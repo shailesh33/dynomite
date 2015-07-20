@@ -271,6 +271,7 @@ struct msg {
                                           /* we could use the dynamic array
                                              here. But we have only 3 ASGs */
     uint8_t              pending_responses;
+    uint8_t              quorum_responses;
     msg_response_handler_t rsp_handler;
     consistency_t        consistency;
     msgid_t              parent_id;       /* parent message id */
@@ -304,6 +305,8 @@ bool msg_empty(struct msg *msg);
 rstatus_t msg_recv(struct context *ctx, struct conn *conn);
 rstatus_t msg_send(struct context *ctx, struct conn *conn);
 uint32_t msg_alloc_msgs(void);
+uint32_t msg_payload_crc32(struct msg *msg);
+struct msg *msg_get_rsp_integer(bool redis);
 
 struct msg *req_get(struct conn *conn);
 void req_put(struct msg *msg);
