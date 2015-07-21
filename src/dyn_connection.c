@@ -95,8 +95,8 @@
 static uint32_t nfree_connq;       /* # free conn q */
 static struct conn_tqh free_connq; /* free conn q */
 
-consistency_t g_read_consistency = LOCAL_ONE;
-consistency_t g_write_consistency = LOCAL_ONE;
+consistency_t g_read_consistency = DEFAULT_READ_CONSISTENCY;
+consistency_t g_write_consistency = DEFAULT_WRITE_CONSISTENCY;
 
 /*
  * Return the context associated with this connection.
