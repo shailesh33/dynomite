@@ -192,8 +192,8 @@ _conn_get(void)
     conn->attempted_reconnect = 0;
     conn->non_bytes_recv = 0;
     //conn->non_bytes_send = 0;
-    conn->read_consistency = LOCAL_ONE;
-    conn->write_consistency = LOCAL_ONE;
+    conn_set_read_consistency(conn, DEFAULT_READ_CONSISTENCY);
+    conn_set_write_consistency(conn, DEFAULT_WRITE_CONSISTENCY);
     conn->type = CONN_UNSPECIFIED;
     conn->rsp_handler = conn_cant_handle_response; // default rsp handler
 

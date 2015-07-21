@@ -193,6 +193,8 @@ typedef enum consistency {
     LOCAL_QUORUM = 1
 } consistency_t;
 
+#define DEFAULT_READ_CONSISTENCY LOCAL_QUORUM
+#define DEFAULT_WRITE_CONSISTENCY LOCAL_QUORUM
 extern consistency_t g_write_consistency;
 extern consistency_t g_read_consistency;
 
