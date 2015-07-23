@@ -517,6 +517,39 @@ void dnode_peer_close_socket(struct context *ctx, struct conn *conn)
 }
 
 void
+dnode_peer_ack_err(struct context *ctx, struct conn *conn, struct msg*msg)
+{
+    bool drop = false;
+
+    if ((msg->swallow && msg->noreply) ||
+        (msg->swallow && (msg->consistency == LOCAL_ONE)) ||
+        (msg->swallow && (msg->consistency == LOCAL_QUORUM)
+                      && (!conn->same_dc))) {
+        log_debug(LOG_INFO, "dyn: close s %d swallow req %"PRIu64" len %"PRIu32
+                  " type %d", conn->sd, msg->id, msg->mlen, msg->type);
+        req_put(msg);
+        return;
+    }
+    struct conn *c_conn = msg->owner;
+    ASSERT(c_conn->client && !c_conn->proxy);
+
+    // Create an appropriate response for the request so its propagated up;
+    // This response gets dropped in rsp_make_error anyways. But since this is
+    // an error path its ok with the overhead.
+    struct msg *rsp = msg_get(conn, false, conn->redis);
+    msg->done = 1;
+    rsp->error = msg->error = 1;
+    rsp->err = msg->err = conn->err;
+    rsp->dyn_error = msg->dyn_error = PEER_CONNECTION_REFUSE;
+
+    log_debug(LOG_INFO, "dyn: close s %d schedule error for req %"PRIu64" "
+              "len %"PRIu32" type %d from c %d%c %s", conn->sd, msg->id,
+               msg->mlen, msg->type, c_conn->sd, conn->err ? ':' : ' ',
+               conn->err ? strerror(conn->err): " ");
+    rstatus_t status = conn_handle_response(c_conn, msg->parent_id, rsp);
+    IGNORE_RET_VAL(status);
+}
+void
 dnode_peer_close(struct context *ctx, struct conn *conn)
 {
     rstatus_t status;
@@ -545,37 +578,11 @@ dnode_peer_close(struct context *ctx, struct conn *conn)
 
         /* dequeue the message (request) from server inq */
         conn->dequeue_inq(ctx, conn, msg);
-
-        /*
-         * Don't send any error response, if
-         * 1. request is tagged as noreply or,
-         * 2. client has already closed its connection
-         */
-        if (msg->swallow || msg->noreply) {
-            log_debug(LOG_INFO, "dyn: close s %d swallow req %"PRIu64" len %"PRIu32
-                    " type %d", conn->sd, msg->id, msg->mlen, msg->type);
-            req_put(msg);
-        } else {
-            c_conn = msg->owner;
-            ASSERT(c_conn->client && !c_conn->proxy);
-
-            msg->done = 1;
-            msg->error = 1;
-            msg->err = conn->err;
-            msg->dyn_error = PEER_CONNECTION_REFUSE;
-
-            if (TAILQ_FIRST(&c_conn->omsg_q) != NULL && req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
-                event_add_out(ctx->evb, msg->owner);
-            }
-
-            log_debug(LOG_INFO, "dyn: close s %d schedule error for req %"PRIu64" "
-                    "len %"PRIu32" type %d from c %d%c %s", conn->sd, msg->id,
-                    msg->mlen, msg->type, c_conn->sd, conn->err ? ':' : ' ',
-                            conn->err ? strerror(conn->err): " ");
-        }
+        dnode_peer_ack_err(ctx, conn, msg);
 
         stats_pool_incr(ctx, server->owner, peer_dropped_requests);
     }
+
     ASSERT(TAILQ_EMPTY(&conn->imsg_q));
 
     for (msg = TAILQ_FIRST(&conn->omsg_q); msg != NULL; msg = nmsg) {
@@ -583,29 +590,9 @@ dnode_peer_close(struct context *ctx, struct conn *conn)
 
         /* dequeue the message (request) from server outq */
         conn->dequeue_outq(ctx, conn, msg);
-
-        if (msg->swallow) {
-            log_debug(LOG_NOTICE, "dyn: close s %d swallow req %"PRIu64" len %"PRIu32
-                    " type %d", conn->sd, msg->id, msg->mlen, msg->type);
-            req_put(msg);
-        } else {
-            c_conn = msg->owner;
-            ASSERT(!c_conn->dnode_client && !c_conn->dnode_server);
-
-            msg->done = 1;
-            msg->error = 1;
-            msg->err = conn->err;
-
-            if (TAILQ_FIRST(&c_conn->omsg_q) != NULL && req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
-                event_add_out(ctx->evb, msg->owner);
-            }
-
-            log_debug(LOG_INFO, "dyn: close s %d schedule error for req %"PRIu64" "
-                    "len %"PRIu32" type %d from c %d%c %s", conn->sd, msg->id,
-                    msg->mlen, msg->type, c_conn->sd, conn->err ? ':' : ' ',
-                            conn->err ? strerror(conn->err): " ");
-        }
+        dnode_peer_ack_err(ctx, conn, msg);
     }
+
     ASSERT(TAILQ_EMPTY(&conn->omsg_q));
 
     msg = conn->rmsg;

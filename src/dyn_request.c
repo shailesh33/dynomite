@@ -1021,23 +1021,62 @@ msg_write_local_quorum_rsp_handler(struct msg *req, struct msg *rsp)
 {
     // we own the response. We will free it when done.
     // the first guy wins. Others are put to rest
-    if (req->peer) {
-        log_notice("putting response %d:%d for request %d:%d",
-                   rsp->id, rsp->parent_id, req->id, req->parent_id);
-        rsp_put(rsp);
-    } else {
-        req->peer = rsp; 
-        rsp->peer = req; 
-        log_notice("accept response %d:%d for request %d:%d",
-                   rsp->id, rsp->parent_id, req->id, req->parent_id);
+    ASSERT(req);
+    ASSERT(rsp);
+    int i;
+    for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
+        if (req->responses[i])
+            continue;
+        // empty slot.
+        req->responses[i] = rsp;
+        --req->pending_responses;
+        break;
     }
 
-    if(--req->quorum_responses) {
-        log_notice("msg %d:%d received response %d:%d need %d more",
-                   req->id, req->parent_id, rsp->id, rsp->parent_id,
-                   req->quorum_responses);
-        return DN_EAGAIN;
+    while (!rsp->error) {
+        if(--req->quorum_responses) {
+            if (!req->pending_responses)
+                break;
+            log_notice("msg %d:%d received response %d:%d need %d more",
+                    req->id, req->parent_id, rsp->id, rsp->parent_id,
+                    req->quorum_responses);
+            return DN_EAGAIN;
+        }
+
+        req->peer = req->responses[0];
+        req->responses[0]->peer = req;
+        for (i = 1; i < MAX_REPLICAS_PER_DC; i++) {
+            rsp_put(req->responses[i]);
+        }
+        log_notice("msg %d received all responses", req->id);
+        return DN_OK;
     }
-    log_notice("msg %d received all responses", req->id);
-    return DN_OK;
+    if (!req->pending_responses) {
+        //msg_get_failed_response();
+        struct msg *rsp_selected = NULL;;
+        for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
+            if (!req->responses[i])
+                break;
+            if (req->responses[i]->error) {
+                rsp_selected = req->responses[i];
+                req->peer = rsp_selected;
+                rsp_selected->peer = req;
+                req->error = rsp_selected->error;
+                req->err = rsp_selected->err;
+                req->dyn_error = rsp_selected->dyn_error;
+            }
+        }
+        ASSERT(rsp_selected);
+
+        //msg_drop_others();
+        for (i = 0; i < MAX_REPLICAS_PER_DC; i++) {
+            if (req->responses[i] == rsp_selected)
+                continue;
+            rsp_put(req->responses[i]);
+        }
+        return DN_OK;
+    }
+    log_notice("msg %d received error response %d:%d", req->id, rsp->id,
+               rsp->parent_id);
+    return DN_EAGAIN;
 }

@@ -369,6 +369,10 @@ rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
     /* dequeue request from client outq */
     conn->dequeue_outq(ctx, conn, pmsg);
 
+    // Remove it from the dict
+    struct msg *req = msg->peer;
+    log_debug(LOG_VERB, "conn %p removing message %d:%d", conn, req->id, req->parent_id);
+    dictDelete(conn->outstanding_msgs_dict, &req->id);
     req_put(pmsg);
 }
 
