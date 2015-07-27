@@ -1160,11 +1160,13 @@ static struct msg*
 rspmgr_get_write_response(struct response_mgr *rspmgr)
 {
     struct msg *rsp;
-    if (rspmgr->received_responses >= rspmgr->quorum_responses)
+    if (rspmgr->received_responses >= rspmgr->quorum_responses) {
         rsp = rspmgr->responses[0];
-    else
+        log_notice("return quorum rsp %p", rsp);
+    } else {
         rsp = rspmgr->err_rsp;
-    log_notice("return rsp %p", rsp);
+        log_notice("return non quorum error rsp %p", rsp);
+    }
     return rsp;
 }
 
@@ -1173,6 +1175,7 @@ rspmgr_get_read_response(struct response_mgr *rspmgr)
 {
     // no quorum possible
     if (rspmgr->received_responses < rspmgr->quorum_responses) {
+        log_notice("return non quorum error rsp %p", rspmgr->err_rsp);
         ASSERT(rspmgr->err_rsp);
         return rspmgr->err_rsp;
     }
@@ -1180,8 +1183,10 @@ rspmgr_get_read_response(struct response_mgr *rspmgr)
     /* I would have done a better job here but we are having only three replicas.
      * Added a Static assert here just in case */
     STATIC_ASSERT(MAX_REPLICAS_PER_DC == 3, "This code should change");
-    if (rspmgr->received_responses == 2) // doesnt matter if responses are same
+    if (rspmgr->received_responses == 2) { //doesnt matter if responses are same
+        log_notice("only 2 responses. return 1st rsp %p", rspmgr->responses[0]);
         return rspmgr->responses[0];
+    }
 
     uint32_t chk0, chk1, chk2;
     chk0 = msg_payload_crc32(rspmgr->responses[0]);

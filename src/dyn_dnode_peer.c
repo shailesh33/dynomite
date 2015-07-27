@@ -413,7 +413,6 @@ dnode_peer_failure(struct context *ctx, struct server *server)
     int64_t now;
     rstatus_t status;
 
-
     server->failure_count++;
 
     if (log_loggable(LOG_VERB)) {
