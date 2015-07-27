@@ -198,6 +198,27 @@ typedef enum consistency {
 extern consistency_t g_write_consistency;
 extern consistency_t g_read_consistency;
 
+struct response_mgr {
+    bool        is_read;
+    bool        done;
+    /* we could use the dynamic array
+       here. But we have only 3 ASGs */
+    struct msg  *responses[MAX_REPLICAS_PER_DC];
+    uint8_t     received_responses; // non-error responses received
+    uint8_t     max_responses;      // max responses expected
+    uint8_t     quorum_responses;   // responses expected to form a quorum
+    uint8_t     error_responses;    // error responses received
+    struct msg  *err_rsp;           // first error response
+};
+
+void init_response_mgr(struct response_mgr *rspmgr, bool is_read,
+                       uint8_t max_responses);
+// DN_OK if response was accepted
+rstatus_t rspmgr_submit_response(struct response_mgr *rspmgr, struct msg *rsp);
+bool rspmgr_is_done(struct response_mgr *rspmgr);
+struct msg* rspmgr_get_response(struct response_mgr *rspmgr);
+void rspmgr_free_response(struct response_mgr *rspmgr, struct msg *dont_free);
+
 struct msg {
     TAILQ_ENTRY(msg)     c_tqe;           /* link in client q */
     TAILQ_ENTRY(msg)     s_tqe;           /* link in server q */
@@ -277,7 +298,7 @@ struct msg {
     msg_response_handler_t rsp_handler;
     consistency_t        consistency;
     msgid_t              parent_id;       /* parent message id */
-
+    struct response_mgr  rspmgr;
 };
 
 TAILQ_HEAD(msg_tqh, msg);
