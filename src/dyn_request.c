@@ -555,6 +555,8 @@ request_send_to_all_racks(struct msg *msg)
 {
     if (!msg->is_read)
         return true;
+    if (msg->type == MSG_REQ_REDIS_PING)
+        return false;
     if (msg->consistency == LOCAL_QUORUM)
         return true;
     return false;
@@ -765,8 +767,8 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
                                          rack_cnt;
                 msg->quorum_responses = msg->consistency == LOCAL_ONE ? 1 :
                                          (uint8_t)(rack_cnt/2 + 1);
-                log_debug(LOG_NOTICE, "same DC racks:%d expect replies %d",
-                          rack_cnt, msg->pending_responses);
+                log_debug(LOG_NOTICE, "msg %d:%d same DC racks:%d expect replies %d",
+                          msg->id, msg->parent_id, rack_cnt, msg->pending_responses);
                 for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
                     struct rack *rack = array_get(&dc->racks, rack_index);
                     //log_debug(LOG_DEBUG, "rack name '%.*s'",
