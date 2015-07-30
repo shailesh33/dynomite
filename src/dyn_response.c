@@ -255,7 +255,7 @@ server_rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *rsp)
     // this should really be the message's response handler be doing it
     if (req_done(c_conn, req)) {
         // handler owns the response now
-        log_notice("handle rsp %d:%d for req %d:%d conn %p", rsp->id,
+        log_debug(LOG_INFO, "handle rsp %d:%d for req %d:%d conn %p", rsp->id,
                    rsp->parent_id, req->id, req->parent_id, c_conn);
         rstatus_t status = DN_OK;
         status = conn_handle_response(c_conn, c_conn->type == CONN_CLIENT ? 

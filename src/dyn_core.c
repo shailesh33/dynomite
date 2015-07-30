@@ -306,10 +306,10 @@ core_close_log(struct conn *conn)
 		type = conn->proxy ? 'p' : 's';
 		addrstr = dn_unresolve_addr(conn->addr, conn->addrlen);
 	}
-	log_debug(LOG_NOTICE, "close %c %d '%s' on event %04"PRIX32" eof %d done "
-			"%d rb %zu sb %zu%c %s", type, conn->sd, addrstr, conn->events,
-			conn->eof, conn->done, conn->recv_bytes, conn->send_bytes,
-			conn->err ? ':' : ' ', conn->err ? strerror(conn->err) : "");
+	log_debug(LOG_INFO, "close %c %d '%s' on event %04"PRIX32" eof %d done "
+			  "%d rb %zu sb %zu%c %s", type, conn->sd, addrstr, conn->events,
+			  conn->eof, conn->done, conn->recv_bytes, conn->send_bytes,
+			  conn->err ? ':' : ' ', conn->err ? strerror(conn->err) : "");
 
 }
 

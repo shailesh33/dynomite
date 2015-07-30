@@ -300,7 +300,7 @@ proxy_accept(struct context *ctx, struct conn *p)
     }
 
     c = conn_get(p->owner, true, p->redis);
-    log_debug(LOG_NOTICE, "got client connection %p", c);
+    log_debug(LOG_INFO, "got client connection %p", c);
     if (c == NULL) {
         log_error("get conn for c %d from p %d failed: %s", sd, p->sd,
                   strerror(errno));
@@ -338,7 +338,7 @@ proxy_accept(struct context *ctx, struct conn *p)
         return status;
     }
 
-    log_debug(LOG_NOTICE, "accepted c %d on p %d from '%s'", c->sd, p->sd,
+    log_debug(LOG_INFO, "accepted c %d on p %d from '%s'", c->sd, p->sd,
               dn_unresolve_peer_desc(c->sd));
 
     return DN_OK;

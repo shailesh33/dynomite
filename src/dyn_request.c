@@ -551,7 +551,15 @@ local_req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg,
 
 
 static bool
-request_send_to_all_racks(struct msg *msg)
+request_send_to_all_dcs(struct msg *msg)
+{
+    if (!msg->is_read)
+        return true;
+    return false;
+}
+
+static bool
+request_send_to_all_local_racks(struct msg *msg)
 {
     if (!msg->is_read)
         return true;
@@ -683,6 +691,106 @@ req_set_dyno_consistency(struct context *ctx, struct conn *c_conn, struct msg *m
 }
 
 static void
+req_forward_all_local_racks(struct context *ctx, struct conn *c_conn,
+                            struct msg *msg, struct mbuf *orig_mbuf,
+                            uint8_t *key, uint32_t keylen, struct datacenter *dc)
+{
+    //log_debug(LOG_DEBUG, "dc name  '%.*s'",
+    //            dc->name->len, dc->name->data);
+    uint8_t rack_cnt = (uint8_t)array_n(&dc->racks);
+    uint8_t rack_index;
+    msg->rsp_handler = msg->is_read ? msg_read_local_quorum_rsp_handler:
+                                      msg_write_local_quorum_rsp_handler;
+    init_response_mgr(&msg->rspmgr, msg->is_read, rack_cnt);
+    msg->pending_responses = msg->consistency == LOCAL_ONE ? 1 : rack_cnt;
+    msg->quorum_responses = msg->consistency == LOCAL_ONE ? 1 :
+                                                (uint8_t)(rack_cnt/2 + 1);
+    log_debug(LOG_INFO, "msg %d:%d same DC racks:%d expect replies %d",
+              msg->id, msg->parent_id, rack_cnt, msg->pending_responses);
+    for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
+        struct rack *rack = array_get(&dc->racks, rack_index);
+        //log_debug(LOG_DEBUG, "rack name '%.*s'",
+        //            rack->name->len, rack->name->data);
+        struct msg *rack_msg;
+        // clone message even for local node
+        struct server_pool *pool = c_conn->owner;
+        if (string_compare(rack->name, &pool->rack) == 0 ) {
+            rack_msg = msg;
+        } else {
+            rack_msg = msg_get(c_conn, msg->request, msg->redis);
+            if (rack_msg == NULL) {
+                log_debug(LOG_VERB, "whelp, looks like yer screwed "
+                        "now, buddy. no inter-rack messages for "
+                        "you!");
+                continue;
+            }
+
+            msg_clone(msg, orig_mbuf, rack_msg);
+            log_debug(LOG_VERB, "msg (%d:%d) clone to rack msg (%d:%d)",
+                    msg->id, msg->parent_id, rack_msg->id, rack_msg->parent_id);
+            rack_msg->swallow = true;
+        }
+
+        if (log_loggable(LOG_DEBUG)) {
+            log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
+                    dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
+        }
+        log_debug(LOG_VERB, "c_conn: %p forwarding (%d:%d)",
+                c_conn, rack_msg->id, rack_msg->parent_id);
+        remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
+    }
+}
+
+static void
+req_forward_local_dc(struct context *ctx, struct conn *c_conn, struct msg *msg,
+                     struct mbuf *orig_mbuf, uint8_t *key, uint32_t keylen,
+                     struct datacenter *dc)
+{
+    struct server_pool *pool = c_conn->owner;
+    if (request_send_to_all_local_racks(msg)) {
+        // send request to all local racks
+        req_forward_all_local_racks(ctx, c_conn, msg, orig_mbuf, key, keylen, dc);
+    } else {
+        // send request to only local token owner
+        ASSERT(msg->is_read);
+        msg->rsp_handler = msg_read_one_rsp_handler;
+        struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack,
+                                                        &pool->dc);
+        remote_req_forward(ctx, c_conn, msg, rack, key, keylen);
+    }
+
+}
+
+static void
+req_forward_remote_dc(struct context *ctx, struct conn *c_conn, struct msg *msg,
+                      struct mbuf *orig_mbuf, uint8_t *key, uint32_t keylen,
+                      struct datacenter *dc)
+{
+    uint32_t rack_cnt = array_n(&dc->racks);
+    if (rack_cnt == 0)
+        return;
+
+    uint32_t ran_index = (uint32_t)rand() % rack_cnt;
+    struct rack *rack = array_get(&dc->racks, ran_index);
+
+    struct msg *rack_msg = msg_get(c_conn, msg->request, msg->redis);
+    if (rack_msg == NULL) {
+        log_debug(LOG_VERB, "whelp, looks like yer screwed now, buddy. no inter-rack messages for you!");
+        msg_put(rack_msg);
+        return;
+    }
+
+    msg_clone(msg, orig_mbuf, rack_msg);
+    rack_msg->swallow = true;
+
+    if (log_loggable(LOG_DEBUG)) {
+        log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
+                dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
+    }
+    remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
+}
+
+static void
 req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
 {
     struct server_pool *pool = c_conn->owner;
@@ -745,90 +853,23 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
         msg->consistency = conn_get_write_consistency(c_conn);
     }
 
-    if (request_send_to_all_racks(msg)) {
-        uint32_t dc_cnt = array_n(&pool->datacenters);
-        uint32_t dc_index;
-        for(dc_index = 0; dc_index < dc_cnt; dc_index++) {
-            struct datacenter *dc = array_get(&pool->datacenters, dc_index);
-            if (dc == NULL) {
-                log_error("Wow, this is very bad, dc is NULL");
-                return;
-            }
+    /* forward the request */
+    uint32_t dc_cnt = array_n(&pool->datacenters);
+    uint32_t dc_index;
 
-            if (string_compare(dc->name, &pool->dc) == 0) { //send to all local racks
-                //log_debug(LOG_DEBUG, "dc name  '%.*s'",
-                //            dc->name->len, dc->name->data);
-                uint8_t rack_cnt = (uint8_t)array_n(&dc->racks);
-                uint8_t rack_index;
-                msg->rsp_handler = msg->is_read ? msg_read_local_quorum_rsp_handler:
-                                                msg_write_local_quorum_rsp_handler;
-                init_response_mgr(&msg->rspmgr, msg->is_read, rack_cnt);
-                msg->pending_responses = msg->consistency == LOCAL_ONE ? 1 :
-                                         rack_cnt;
-                msg->quorum_responses = msg->consistency == LOCAL_ONE ? 1 :
-                                         (uint8_t)(rack_cnt/2 + 1);
-                log_debug(LOG_NOTICE, "msg %d:%d same DC racks:%d expect replies %d",
-                          msg->id, msg->parent_id, rack_cnt, msg->pending_responses);
-                for(rack_index = 0; rack_index < rack_cnt; rack_index++) {
-                    struct rack *rack = array_get(&dc->racks, rack_index);
-                    //log_debug(LOG_DEBUG, "rack name '%.*s'",
-                    //            rack->name->len, rack->name->data);
-                    struct msg *rack_msg;
-                    // clone message even for local node
-                    if (string_compare(rack->name, &pool->rack) == 0 ) {
-                        rack_msg = msg;
-                    } else {
-                        rack_msg = msg_get(c_conn, msg->request, msg->redis);
-                        if (rack_msg == NULL) {
-                            log_debug(LOG_VERB, "whelp, looks like yer screwed "
-                                      "now, buddy. no inter-rack messages for "
-                                      "you!");
-                            continue;
-                        }
+    for(dc_index = 0; dc_index < dc_cnt; dc_index++) {
 
-                        msg_clone(msg, orig_mbuf, rack_msg);
-                        log_debug(LOG_VERB, "msg (%d:%d) clone to rack msg (%d:%d)",
-                                  msg->id, msg->parent_id, rack_msg->id, rack_msg->parent_id);
-                        rack_msg->swallow = true;
-                    }
-
-                    if (log_loggable(LOG_DEBUG)) {
-                       log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
-                               dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
-                    }
-                    log_debug(LOG_VERB, "c_conn: %p forwarding (%d:%d)",
-                              c_conn, rack_msg->id, rack_msg->parent_id);
-                    remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
-                }
-            } else {
-                uint32_t rack_cnt = array_n(&dc->racks);
-                if (rack_cnt == 0)
-                    continue;
-
-                uint32_t ran_index = (uint32_t)rand() % rack_cnt;
-                struct rack *rack = array_get(&dc->racks, ran_index);
-
-                struct msg *rack_msg = msg_get(c_conn, msg->request, msg->redis);
-                if (rack_msg == NULL) {
-                    log_debug(LOG_VERB, "whelp, looks like yer screwed now, buddy. no inter-rack messages for you!");
-                    msg_put(rack_msg);
-                    continue;
-                }
-
-                msg_clone(msg, orig_mbuf, rack_msg);
-                rack_msg->swallow = true;
-
-                if (log_loggable(LOG_DEBUG)) {
-                   log_debug(LOG_DEBUG, "forwarding request to conn '%s' on rack '%.*s'",
-                           dn_unresolve_peer_desc(c_conn->sd), rack->name->len, rack->name->data);
-                }
-                remote_req_forward(ctx, c_conn, rack_msg, rack, key, keylen);
-            }
+        struct datacenter *dc = array_get(&pool->datacenters, dc_index);
+        if (dc == NULL) {
+            log_error("Wow, this is very bad, dc is NULL");
+            return;
         }
-    } else { //for read only requests
-        msg->rsp_handler = msg_read_one_rsp_handler;
-        struct rack * rack = server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc);
-        remote_req_forward(ctx, c_conn, msg, rack, key, keylen);
+
+        if (string_compare(dc->name, &pool->dc) == 0)
+            req_forward_local_dc(ctx, c_conn, msg, orig_mbuf, key, keylen, dc);
+        else if (request_send_to_all_dcs(msg)) {
+            req_forward_remote_dc(ctx, c_conn, msg, orig_mbuf, key, keylen, dc);
+        }
     }
 }
 
@@ -1164,10 +1205,10 @@ rspmgr_get_write_response(struct response_mgr *rspmgr)
     struct msg *rsp;
     if (rspmgr->received_responses >= rspmgr->quorum_responses) {
         rsp = rspmgr->responses[0];
-        log_notice("return quorum rsp %p", rsp);
+        log_debug(LOG_INFO, "return quorum rsp %p", rsp);
     } else {
         rsp = rspmgr->err_rsp;
-        log_notice("return non quorum error rsp %p", rsp);
+        log_warn("return non quorum error rsp %p", rsp);
     }
     return rsp;
 }
@@ -1177,7 +1218,7 @@ rspmgr_get_read_response(struct response_mgr *rspmgr)
 {
     // no quorum possible
     if (rspmgr->received_responses < rspmgr->quorum_responses) {
-        log_notice("return non quorum error rsp %p", rspmgr->err_rsp);
+        log_warn("return non quorum error rsp %p", rspmgr->err_rsp);
         ASSERT(rspmgr->err_rsp);
         return rspmgr->err_rsp;
     }
@@ -1186,7 +1227,7 @@ rspmgr_get_read_response(struct response_mgr *rspmgr)
      * Added a Static assert here just in case */
     STATIC_ASSERT(MAX_REPLICAS_PER_DC == 3, "This code should change");
     if (rspmgr->received_responses == 2) { //doesnt matter if responses are same
-        log_notice("only 2 responses. return 1st rsp %p", rspmgr->responses[0]);
+        log_debug(LOG_INFO, "only 2 responses. return 1st rsp %p", rspmgr->responses[0]);
         return rspmgr->responses[0];
     }
 
