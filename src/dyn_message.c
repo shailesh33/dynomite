@@ -303,7 +303,6 @@ done:
     msg->dyn_error = 0;
     msg->rsp_handler = msg_cant_handle_response;
     msg->consistency = LOCAL_ONE;
-    memset(msg->responses, 0, MAX_REPLICAS_PER_DC * sizeof(struct msg*));
     return msg;
 }
 
@@ -735,7 +734,7 @@ msg_fragment(struct context *ctx, struct conn *conn, struct msg *msg)
      * last_fragment identify first and last fragment respectively.
      *
      * For example, a message vector given below is split into 3 fragments:
-     *  'get key1 key2 key3\r\n'
+     *  'mget key1 key2 key3\r\n'
      *  Or,
      *  '*4\r\n$4\r\nmget\r\n$4\r\nkey1\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n'
      *

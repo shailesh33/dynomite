@@ -290,11 +290,6 @@ struct msg {
                                           */
     unsigned             is_read:1;       /*  0 : write
                                               1 : read */
-    struct msg           *responses[MAX_REPLICAS_PER_DC];
-                                          /* we could use the dynamic array
-                                             here. But we have only 3 ASGs */
-    uint8_t              pending_responses;
-    uint8_t              quorum_responses;
     msg_response_handler_t rsp_handler;
     consistency_t        consistency;
     msgid_t              parent_id;       /* parent message id */
